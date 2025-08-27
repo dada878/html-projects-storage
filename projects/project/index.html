@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>番茄鐘</title>
+  <style>
+    /* === Reset & Base === */
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    body {
+      background: linear-gradient(135deg, #1e1e1e, #121212);
+      color: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+      min-height: 100vh; padding: 2rem 1rem;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+
+    /* === Circular Timer === */
+    .timer-container { position: relative; width: 220px; height: 220px; margin-bottom: 1.5rem; }
+    svg { transform: rotate(-90deg); }
+    .circle-bg { fill: none; stroke: #333; stroke-width: 12; }
+    .circle { fill: none; stroke-width: 12; stroke-linecap: round; transition: stroke 0.3s; }
+    .time-display { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 2rem; font-weight: bold; }
+
+    /* === Controls === */
+    .controls { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin-bottom: 1rem; }
+    button {
+      padding: 0.6rem 1rem; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem;
+      background-color: #2a2a2a; color: #fff; transition: all 0.2s ease;
+    }
+    button:hover { background-color: #3a3a3a; transform: scale(1.05); }
+
+    /* === Completed Pomodoros === */
+    .completed { margin-top: 1rem; font-size: 0.95rem; color: #aaa; }
+
+    /* === Dialog === */
+    dialog { border: none; border-radius: 12px; padding: 1.5rem; background-color: #1e1e1e; color: #fff; max-width: 300px; width: 100%; }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+    .dialog-content label { display: block; margin: 0.5rem 0 0.2rem; }
+    .dialog-content input { width: 100%; padding: 0.4rem; margin-bottom: 0.5rem; border-radius: 6px; border: none; outline: none; font-size: 1rem; background-color: #333; color: #fff; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+
+    /* === Notification Tip === */
+    #notif-tip {
+      display: none;
+      background-color: #333;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      max-width: 320px;
+      text-align: left;
+      border: 1px solid #555;
+    }
+    #notif-tip.show { display: block; animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <h1>番茄鐘</h1>
+
+  <!-- Timer -->
+  <div class="timer-container">
+    <svg width="220" height="220">
+      <circle class="circle-bg" cx="110" cy="110" r="100"></circle>
+      <circle class="circle" cx="110" cy="110" r="100"></circle>
+    </svg>
+    <div class="time-display">25:00</div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button id="start-pause">開始</button>
+    <button id="reset">重置</button>
+    <button id="mode">切換模式</button>
+    <button id="settings">設定</button>
+    <button id="enable-notifications">啟用通知</button>
+  </div>
+
+  <!-- Completed -->
+  <div class="completed">完成的番茄數：<span id="completed-count">0</span></div>
+
+  <!-- Notification Tip -->
+  <div id="notif-tip"></div>
+
+  <!-- Dialog -->
+  <dialog id="settings-dialog">
+    <div class="dialog-content">
+      <label for="work-time">工作時間 (分鐘)</label>
+      <input type="number" id="work-time" value="25" min="1">
+      <label for="break-time">休息時間 (分鐘)</label>
+      <input type="number" id="break-time" value="5" min="1">
+    </div>
+    <div class="dialog-actions">
+      <button id="cancel-settings">取消</button>
+      <button id="save-settings">儲存</button>
+    </div>
+  </dialog>
+
+  <!-- Sound -->
+  <audio id="alarm-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+  <script>
+    const startPauseBtn = document.getElementById("start-pause");
+    const resetBtn = document.getElementById("reset");
+    const modeBtn = document.getElementById("mode");
+    const settingsBtn = document.getElementById("settings");
+    const enableNotifBtn = document.getElementById("enable-notifications");
+    const notifTip = document.getElementById("notif-tip");
+    const settingsDialog = document.getElementById("settings-dialog");
+    const cancelSettingsBtn = document.getElementById("cancel-settings");
+    const saveSettingsBtn = document.getElementById("save-settings");
+    const workInput = document.getElementById("work-time");
+    const breakInput = document.getElementById("break-time");
+    const timeDisplay = document.querySelector(".time-display");
+    const circle = document.querySelector(".circle");
+    const completedCountEl = document.getElementById("completed-count");
+    const alarmSound = document.getElementById("alarm-sound");
+
+    let workDuration = 25 * 60;
+    let breakDuration = 5 * 60;
+    let timeLeft = workDuration;
+    let isRunning = false;
+    let isWorkMode = true;
+    let timer;
+    let completedCount = 0;
+
+    const radius = 100;
+    const circumference = 2 * Math.PI * radius;
+    circle.style.strokeDasharray = circumference;
+    circle.style.strokeDashoffset = 0;
+
+    function formatTime(totalSec) {
+      const minutes = Math.floor(Math.max(totalSec, 0) / 60);
+      const seconds = Math.max(totalSec, 0) % 60;
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    function computeProgress(left, duration) {
+      if (duration <= 0) return 0;
+      const p = left / duration;
+      return Math.max(0, Math.min(1, p));
+    }
+
+    function canUseNotifications() { return typeof Notification !== 'undefined'; }
+    function getBrowserName() {
+      const ua = navigator.userAgent;
+      if (/chrome|chromium|crios/i.test(ua) && !/edg/i.test(ua)) return "Chrome";
+      if (/edg/i.test(ua)) return "Edge";
+      if (/firefox|fxios/i.test(ua)) return "Firefox";
+      if (/safari/i.test(ua) && !/chrome|chromium|crios/i.test(ua)) return "Safari";
+      return "Unknown";
+    }
+
+    function updateNotifTip() {
+      const browser = getBrowserName();
+      let tip = "通知功能目前被封鎖。請至瀏覽器設定中允許通知：<br>";
+      switch (browser) {
+        case "Chrome":
+          tip += "• Chrome：設定 → 隱私權與安全性 → 網站設定 → 通知";
+          break;
+        case "Edge":
+          tip += "• Edge：設定 → Cookie 和網站權限 → 通知";
+          break;
+        case "Firefox":
+          tip += "• Firefox：設定 → 隱私與安全性 → 權限 → 通知";
+          break;
+        case "Safari":
+          tip += "• Safari：系統偏好設定 → 通知 → 在此網站允許通知";
+          break;
+        default:
+          tip += "請查看您的瀏覽器通知設定。";
+      }
+      notifTip.innerHTML = tip;
+      notifTip.classList.add('show');
+    }
+
+    async function tryEnableNotifications() {
+      if (!canUseNotifications()) {
+        alert('此瀏覽器不支援通知功能');
+        return false;
+      }
+      if (Notification.permission === 'granted') {
+        alert('通知已啟用');
+        notifTip.classList.remove('show');
+        return true;
+      }
+      if (Notification.permission === 'denied') {
+        updateNotifTip();
+        return false;
+      }
+      try {
+        const res = await Notification.requestPermission();
+        if (res === 'granted') {
+          alert('通知已啟用');
+          notifTip.classList.remove('show');
+          return true;
+        } else {
+          updateNotifTip();
+          return false;
+        }
+      } catch (e) {
+        console.warn('Notification permission request failed:', e);
+        updateNotifTip();
+        return false;
+      }
+    }
+
+    function notifyUser(message) {
+      if (canUseNotifications() && Notification.permission === 'granted') {
+        try { new Notification(message); } catch (e) { console.warn('Notification failed:', e); }
+      }
+    }
+
+    function updateDisplay() {
+      timeDisplay.textContent = formatTime(timeLeft);
+      document.title = `${timeDisplay.textContent} - 番茄鐘`;
+
+      const duration = isWorkMode ? workDuration : breakDuration;
+      const progress = computeProgress(timeLeft, duration);
+      circle.style.strokeDashoffset = circumference * (1 - progress);
+      circle.style.stroke = isWorkMode ? '#f97316' : '#3b82f6';
+    }
+
+    function onTick() {
+      timeLeft--;
+      if (timeLeft <= 0) {
+        clearInterval(timer);
+        alarmSound.currentTime = 0;
+        alarmSound.play().catch(() => {});
+
+        if (isWorkMode) {
+          completedCount++;
+          completedCountEl.textContent = completedCount;
+          notifyUser('工作完成！休息一下吧 🍵');
+        } else {
+          notifyUser('休息結束！回到工作 🍅');
+        }
+        isWorkMode = !isWorkMode;
+        timeLeft = isWorkMode ? workDuration : breakDuration;
+        updateDisplay();
+        startTimer();
+        return;
+      }
+      updateDisplay();
+    }
+
+    function startTimer() {
+      clearInterval(timer);
+      timer = setInterval(onTick, 1000);
+      isRunning = true;
+      startPauseBtn.textContent = '暫停';
+    }
+
+    function pauseTimer() {
+      clearInterval(timer);
+      isRunning = false;
+      startPauseBtn.textContent = '開始';
+    }
+
+    function startPauseHandler() {
+      if (isRunning) {
+        pauseTimer();
+      } else {
+        startTimer();
+      }
+    }
+
+    function resetTimer() {
+      clearInterval(timer);
+      isRunning = false;
+      timeLeft = isWorkMode ? workDuration : breakDuration;
+      startPauseBtn.textContent = '開始';
+      updateDisplay();
+    }
+
+    function toggleMode() {
+      isWorkMode = !isWorkMode;
+      timeLeft = isWorkMode ? workDuration : breakDuration;
+      resetTimer();
+    }
+
+    settingsBtn.addEventListener('click', () => settingsDialog.showModal());
+    cancelSettingsBtn.addEventListener('click', () => settingsDialog.close());
+
+    saveSettingsBtn.addEventListener('click', () => {
+      const w = Number(workInput.value);
+      const b = Number(breakInput.value);
+      if (!Number.isFinite(w) || !Number.isFinite(b) || w <= 0 || b <= 0) {
+        alert('請輸入有效的分鐘數（必須大於 0）。');
+        return;
+      }
+      workDuration = w * 60; breakDuration = b * 60;
+      timeLeft = isWorkMode ? workDuration : breakDuration;
+      settingsDialog.close();
+      resetTimer();
+    });
+
+    enableNotifBtn.addEventListener('click', tryEnableNotifications);
+    startPauseBtn.addEventListener('click', startPauseHandler);
+    resetBtn.addEventListener('click', resetTimer);
+    modeBtn.addEventListener('click', toggleMode);
+
+    updateDisplay();
+  </script>
+</body>
+</html>
