@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Media Search · Zen</title>
+<style>
+  :root{
+    --bg-start:#0b1220; /* 深藍靛 */
+    --bg-end:#03060c;   /* 近黑 */
+    --ink:#eaeef6;      /* 主字色 */
+    --muted:#a9b3c7;
+    --accent:#c9b07a;   /* Zenbook 金銅 */
+    --accent-2:#7e6a48;
+    --card:#0e1726cc;   /* 玻璃感 */
+    --stroke:#1e2a41;
+    --ok:#86efac;
+    --warn:#fde68a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    color:var(--ink);
+    background:
+      radial-gradient(1000px 600px at 80% 10%, #22304b55 0%, transparent 60%),
+      radial-gradient(800px 500px at 10% 80%, #1a224033 0%, transparent 60%),
+      linear-gradient(140deg, var(--bg-start), var(--bg-end));
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "Microsoft JhengHei", Arial, "PingFang TC", sans-serif;
+    letter-spacing:.2px;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 64px}
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 20px
+  }
+  .brand{
+    display:flex;align-items:center;gap:12px;
+  }
+  .badge{
+    width:42px;height:42px;border-radius:12px;
+    background: conic-gradient(from 200deg at 50% 50%, #2a3a57, #0f172a 40%, #2a3a57 70%, #0f172a);
+    border:1px solid #2b3752;
+    box-shadow: 0 8px 24px #00000040, inset 0 1px 0 #ffffff08;
+  }
+  h1{font-size:22px;margin:0;font-weight:650;letter-spacing:.4px}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .card{
+    background:var(--card); backdrop-filter: blur(10px);
+    border:1px solid var(--stroke); border-radius:18px;
+    box-shadow: 0 10px 30px #00000055, inset 0 1px 0 #ffffff08;
+    padding:18px;
+  }
+  .grid{display:grid;gap:14px}
+  @media(min-width:780px){ .grid-2{grid-template-columns:1.2fr .8fr} }
+  label{display:block;font-size:13px;color:var(--muted);margin:2px 0 8px}
+  input[type="text"], input[type="date"], textarea{
+    width:100%; background:#0b1322; color:var(--ink);
+    border:1px solid #1e2a41; border-radius:12px; padding:12px 14px; outline:none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  textarea{min-height:88px;resize:vertical}
+  input:focus, textarea:focus{border-color:#32466f; box-shadow:0 0 0 3px #4b6aa61f}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .sites{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:6px;max-height:220px;overflow:auto;padding-right:4px
+  }
+  .chip{
+    display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #21304f;border-radius:12px;background:#0b1322;
+    font-size:13px;color:#c9d2e7
+  }
+  .chip input{accent-color:var(--accent)}
+  .hint{font-size:12px;color:var(--muted)}
+  .btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .btn{
+    appearance:none;border:1px solid #2b3755;background:
+      linear-gradient(180deg,#142137,#0a1322);
+    color:var(--ink); padding:11px 14px;border-radius:12px;cursor:pointer;
+    font-weight:600;font-size:14px; letter-spacing:.2px;
+    transition: transform .08s ease, box-shadow .2s, border-color .2s;
+    box-shadow: 0 6px 18px #00000055, inset 0 1px 0 #ffffff10;
+  }
+  .btn:hover{border-color:#445a86; box-shadow:0 8px 24px #00000066}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{
+    background: linear-gradient(180deg,#2d2a1f,#0f0c07);
+    border-color:#5f5130;
+    box-shadow:0 10px 28px #00000077, inset 0 1px 0 #ffffff10;
+  }
+  .btn.primary .dot{
+    width:8px;height:8px;border-radius:50%;margin-left:8px;background:
+      radial-gradient(circle at 40% 40%, #fff, #ffe6b0 40%, #c9b07a 60%, #7e6a48);
+    box-shadow:0 0 6px #f9e3a8aa, 0 0 18px #f1d28755;
+    display:inline-block;vertical-align:middle
+  }
+  .divider{height:1px;background:linear-gradient(90deg,transparent,#23314f,transparent);margin:18px 0}
+  .result{display:grid;gap:10px;margin-top:10px}
+  .item{
+    padding:12px 12px 12px 14px; border:1px solid #23314f; border-radius:12px;
+    background:#0b1322; transition:border-color .2s
+  }
+  .item:hover{border-color:#3a4f7a}
+  .item a{color:#cfe0ff;text-decoration:none}
+  .item small{display:block;margin-top:4px;color:#93a2bf}
+  .pill{display:inline-block;padding:4px 8px;border:1px solid #41527a;border-radius:999px;font-size:12px;color:#cbd8f5;margin-right:6px}
+  .footer{margin-top:18px;color:var(--muted);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="badge" aria-hidden="true"></div>
+        <div>
+          <h1>Media Search · Zen</h1>
+          <div class="sub">Design you can feel — 極簡、靜謐、一次到位的媒體監測搜尋器。</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="card grid grid-2">
+      <div class="grid">
+        <div>
+          <label>關鍵字（活動名稱、品牌名、Hashtag...）</label>
+          <input id="kw" type="text" placeholder="例如：ASUS Zenbook 發表會">
+        </div>
+        <div class="row">
+          <div>
+            <label>開始日期</label>
+            <input id="start" type="date">
+          </div>
+          <div>
+            <label>結束日期</label>
+            <input id="end" type="date">
+          </div>
+        </div>
+        <div>
+          <label>排除詞（以空白分隔，會加上 - 符號）</label>
+          <input id="exclude" type="text" placeholder="例如：二手 贊助 廣編">
+        </div>
+        <div>
+          <label>自訂附加關鍵字（可留空）</label>
+          <input id="extra" type="text" placeholder="例如：媒體報導 首發 現場 直擊">
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+          <label>網站篩選</label>
+          <div class="sites" id="siteList">
+            <!-- 動態填入 -->
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input id="customSite" type="text" placeholder="輸入自訂網域，例如: technews.tw">
+            <button class="btn" onclick="addCustomSite()">加入自訂網域</button>
+          </div>
+          <div class="btns">
+            <button class="btn" onclick="presetTW()">台灣媒體預設</button>
+            <button class="btn" onclick="clearSites()">清除網站</button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="btns">
+          <button class="btn primary" onclick="openAll()">
+            一鍵開分頁（Google、新聞、Bing） <span class="dot"></span>
+          </button>
+          <button class="btn" onclick="copyQuery()">複製搜尋語法</button>
+          <button class="btn" onclick="copyAllLinks()">複製所有搜尋連結</button>
+          <button class="btn" onclick="resetForm()">重設</button>
+        </div>
+
+        <div class="hint">提示：瀏覽器可能會阻擋彈出視窗。若無法開啟多分頁，先允許此頁的彈出視窗或改用「複製連結」。</div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <label>（選填）Google Programmable Search</label>
+          <div class="row">
+            <input id="apiKey" type="text" placeholder="API key">
+            <input id="cx" type="text" placeholder="搜尋引擎 ID（cx）">
+          </div>
+          <div class="btns">
+            <button class="btn" onclick="runCSE()">直接抓結果（JSON）</button>
+            <button class="btn" onclick="downloadCSV()">下載 CSV</button>
+          </div>
+          <div class="hint">說明：若你填入個人的 API key 與 cx，本頁會在瀏覽器端呼叫 CSE API 顯示前 10 筆結果。</div>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <label>產生的搜尋語法</label>
+          <textarea id="preview" readonly placeholder=""></textarea>
+        </div>
+        <div>
+          <label>結果預覽</label>
+          <div id="result" class="result"></div>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer">© Media Search · Zen — 靜與勁並行。No external libraries. Single-file HTML.</p>
+  </div>
+
+<script>
+  // 預設網站清單（可自行調整）
+  const DEFAULT_SITES = [
+    "udn.com","ettoday.net","cna.com.tw","ltn.com.tw","chinatimes.com",
+    "storm.mg","setn.com","tvbs.com.tw","news.yahoo.com","bnext.com.tw",
+    "technews.tw","insight.technews.tw","businessweekly.com.tw",
+    "nownews.com","mirror-media.com","thenewslens.com",
+    "appledaily.com","reuters.com","bloomberg.com","theverge.com"
+  ];
+
+  const state = {
+    sites: new Set(),
+    results: []
+  };
+
+  function el(id){ return document.getElementById(id); }
+
+  function initSites(list=DEFAULT_SITES){
+    const box = el("siteList");
+    box.innerHTML = "";
+    list.forEach(domain=>{
+      const id = "site-"+domain.replace(/\./g,"-");
+      const wrap = document.createElement("label");
+      wrap.className = "chip";
+      wrap.innerHTML = `
+        <input type="checkbox" id="${id}" data-domain="${domain}">
+        <span>${domain}</span>
+      `;
+      box.appendChild(wrap);
+    });
+  }
+  initSites();
+
+  function presetTW(){
+    state.sites = new Set(DEFAULT_SITES);
+    initSites(DEFAULT_SITES);
+    // 勾選全部
+    document.querySelectorAll("#siteList input[type=checkbox]").forEach(cb=>cb.checked = true);
+    syncPreview();
+  }
+
+  function clearSites(){
+    state.sites.clear();
+    document.querySelectorAll("#siteList input[type=checkbox]").forEach(cb=>cb.checked = false);
+    syncPreview();
+  }
+
+  function addCustomSite(){
+    const v = el("customSite").value.trim();
+    if(!v) return;
+    const cleaned = v.replace(/^https?:\/\//,"").replace(/\/.*$/,"");
+    if(cleaned){
+      state.sites.add(cleaned);
+      const current = Array.from(new Set([...DEFAULT_SITES, ...state.sites]));
+      initSites(current);
+      // 勾選新加入的
+      const id = "site-"+cleaned.replace(/\./g,"-");
+      const cb = document.getElementById(id);
+      if(cb) cb.checked = true;
+      el("customSite").value = "";
+      syncPreview();
+    }
+  }
+
+  function getSelectedSites(){
+    const sel = [];
+    document.querySelectorAll("#siteList input[type=checkbox]").forEach(cb=>{
+      if(cb.checked) sel.push(cb.dataset.domain);
+    });
+    return sel;
+  }
+
+  function buildQuery(){
+    const kw = el("kw").value.trim();
+    const extra = el("extra").value.trim();
+    const exclude = el("exclude").value.trim();
+    const start = el("start").value;
+    const end = el("end").value;
+    const sites = getSelectedSites();
+
+    // 核心關鍵字：用引號鎖定活動名稱，額外詞以空白相連
+    let terms = [];
+    if(kw) terms.push(`"${kw}"`);
+    if(extra){
+      // 將空白分詞後逐一串接
+      terms.push(extra.split(/\s+/).map(s=>s).join(" "));
+    }
+    if(exclude){
+      exclude.split(/\s+/).forEach(t=>{
+        if(t) terms.push(`-${t}`);
+      });
+    }
+    if(sites.length){
+      const siteExpr = sites.map(s=>`site:${s}`).join(" OR ");
+      terms.push(`(${siteExpr})`);
+    }
+    const q = terms.join(" ").replace(/\s+/g," ").trim();
+
+    // Google 的日期參數
+    let tbs = "";
+    if(start || end){
+      const s = start || "";
+      const e = end || "";
+      tbs = `&tbs=cdr:1,cd_min:${s},cd_max:${e}`;
+    }
+    return { q, tbs };
+  }
+
+  function syncPreview(){
+    const {q} = buildQuery();
+    el("preview").value = q || "";
+  }
+
+  // 監看輸入變動以更新預覽
+  ["kw","extra","exclude","start","end"].forEach(id=>{
+    el(id).addEventListener("input", syncPreview);
+  });
+  document.addEventListener("change", e=>{
+    if(e.target && e.target.matches("#siteList input[type=checkbox]")) syncPreview();
+  });
+
+  function genLinks(){
+    const {q, tbs} = buildQuery();
+    const g = `https://www.google.com/search?hl=zh-TW&q=${encodeURIComponent(q)}${tbs}`;
+    const gn = `https://www.google.com/search?hl=zh-TW&tbm=nws&q=${encodeURIComponent(q)}${tbs}`;
+    const b = `https://www.bing.com/search?q=${encodeURIComponent(q)}`;
+    const bn = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&qft=sortbydate%3d"1"`;
+    return [g, gn, b, bn];
+  }
+
+  function openAll(){
+    const links = genLinks();
+    links.forEach(u=> window.open(u, "_blank"));
+  }
+
+  async function copy(text){
+    try{ await navigator.clipboard.writeText(text); toast("已複製"); }
+    catch(e){ alert("複製失敗，請手動複製。"); }
+  }
+
+  function copyQuery(){
+    const {q} = buildQuery();
+    if(!q) return;
+    copy(q);
+  }
+  function copyAllLinks(){
+    const links = genLinks().join("\n");
+    copy(links);
+  }
+
+  function resetForm(){
+    ["kw","extra","exclude","start","end","apiKey","cx","customSite"].forEach(id=>el(id).value="");
+    clearSites(); el("result").innerHTML = ""; el("preview").value = "";
+    state.results = [];
+  }
+
+  function toast(msg){
+    const t = document.createElement("div");
+    t.textContent = msg;
+    t.style.position="fixed";
+    t.style.left="50%";
+    t.style.bottom="26px";
+    t.style.transform="translateX(-50%)";
+    t.style.background="rgba(15, 23, 42, .9)";
+    t.style.border="1px solid #2b3755";
+    t.style.padding="10px 14px";
+    t.style.borderRadius="10px";
+    t.style.color="var(--ink)";
+    t.style.boxShadow="0 8px 22px #00000066";
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(),1300);
+  }
+
+  // 直接呼叫 Google Programmable Search API（可選）
+  async function runCSE(){
+    const key = el("apiKey").value.trim();
+    const cx = el("cx").value.trim();
+    const {q} = buildQuery();
+    if(!key || !cx){ toast("請填入 API key 與 cx"); return; }
+    if(!q){ toast("請輸入關鍵字"); return; }
+    const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(key)}&cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(q)}`;
+    el("result").innerHTML = `<div class="hint">查詢中...</div>`;
+    try{
+      const res = await fetch(url);
+      const data = await res.json();
+      const items = data.items || [];
+      state.results = items.map(it=>({
+        title: it.title,
+        link: it.link,
+        snippet: it.snippet || "",
+        displayLink: it.displayLink || ""
+      }));
+      renderResults();
+      toast(`取得 ${state.results.length} 筆`);
+    }catch(err){
+      el("result").innerHTML = `<div class="hint">發生錯誤，請檢查 key/cx 或配額。</div>`;
+    }
+  }
+
+  function renderResults(){
+    const box = el("result");
+    box.innerHTML = "";
+    if(!state.results.length){
+      box.innerHTML = `<div class="hint">尚無結果。可用上方按鈕開啟搜尋分頁，或填入 API key/cx 後直接抓結果。</div>`;
+      return;
+    }
+    state.results.forEach(r=>{
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <a href="${r.link}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
+        <small>${escapeHtml(r.displayLink || "")}</small>
+        <small>${escapeHtml(r.snippet || "")}</small>
+      `;
+      box.appendChild(div);
+    });
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, s=>({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[s]));
+  }
+
+  function downloadCSV(){
+    if(!state.results.length){ toast("沒有結果可匯出"); return; }
+    const rows = [
+      ["title","link","source","snippet"],
+      ...state.results.map(r=>[r.title,r.link,r.displayLink,r.snippet])
+    ];
+    const csv = rows.map(r=>r.map(cell=>{
+      const t = String(cell ?? "");
+      // 簡單 CSV 轉義
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g,'""')}"` : t;
+    }).join(",")).join("\n");
+    const blob = new Blob([`\ufeff${csv}`], {type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "media-search.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // 預先同步一次
+  syncPreview();
+</script>
+</body>
+</html>
