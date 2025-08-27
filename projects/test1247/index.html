@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>番茄鐘</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 使用 Inter 字體 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* 漸層背景 */
+        body {
+            background: linear-gradient(135deg, #1f2937, #111827);
+            min-height: 100vh;
+            color: #e5e7eb;
+        }
+
+        /* 圓形進度環的樣式 */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.5s ease-in-out;
+        }
+
+        /* 按鈕在點擊時的視覺效果 */
+        button:active {
+            transform: scale(0.98);
+        }
+
+        /* 隱藏預設的數字輸入欄位箭頭 */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center">
+
+    <!-- 主應用程式容器 -->
+    <div class="bg-gray-800 p-8 rounded-3xl shadow-2xl w-full max-w-lg mx-4 text-center transform transition-all duration-300 hover:scale-105 my-8">
+
+        <!-- 標題 -->
+        <h1 class="text-3xl sm:text-4xl font-bold mb-4 text-gray-100">番茄鐘</h1>
+
+        <!-- 番茄數顯示 -->
+        <div class="text-sm text-gray-400 mb-6">
+            已完成番茄數: <span id="pomodoroCount" class="font-bold text-gray-200">0</span>
+        </div>
+
+        <!-- 模式切換按鈕 -->
+        <div class="flex justify-center space-x-2 sm:space-x-4 mb-8">
+            <button id="pomodoroBtn" class="px-4 py-2 rounded-full font-bold transition-colors duration-300 bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm sm:text-base">番茄時間</button>
+            <button id="shortBreakBtn" class="px-4 py-2 rounded-full font-bold transition-colors duration-300 bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm sm:text-base">短休息</button>
+            <button id="longBreakBtn" class="px-4 py-2 rounded-full font-bold transition-colors duration-300 bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm sm:text-base">長休息</button>
+        </div>
+
+        <!-- 圓形進度環和計時器 -->
+        <div class="relative w-64 h-64 sm:w-80 sm:h-80 mx-auto mb-8">
+            <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <!-- 進度環背景 -->
+                <circle class="text-gray-700"
+                        stroke-width="8"
+                        stroke="currentColor"
+                        fill="transparent"
+                        r="45"
+                        cx="50"
+                        cy="50"/>
+                <!-- 進度環 -->
+                <circle id="progressCircle"
+                        class="progress-ring__circle"
+                        stroke-width="8"
+                        stroke-linecap="round"
+                        stroke="currentColor"
+                        fill="transparent"
+                        r="45"
+                        cx="50"
+                        cy="50"/>
+            </svg>
+            <!-- 計時器顯示在進度環中心 -->
+            <div id="timer" class="absolute inset-0 flex items-center justify-center text-5xl sm:text-6xl font-bold text-gray-100">
+                25:00
+            </div>
+        </div>
+
+        <!-- 控制按鈕 -->
+        <div class="flex justify-center items-center space-x-4">
+            <button id="startStopBtn" class="bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-green-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-green-400 text-sm sm:text-base">開始</button>
+            <button id="resetBtn" class="bg-gray-600 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm sm:text-base">重設</button>
+            <button id="settingsBtn" class="bg-gray-600 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-400 text-sm sm:text-base">設定</button>
+        </div>
+
+    </div>
+
+    <!-- 訊息提示框 -->
+    <div id="messageModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 transition-opacity duration-300">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl text-center max-w-xs mx-auto">
+            <p id="messageText" class="text-lg font-semibold mb-4"></p>
+            <button id="messageOkBtn" class="bg-green-600 text-white px-6 py-2 rounded-full font-bold hover:bg-green-700 transition-colors duration-300">好的</button>
+        </div>
+    </div>
+
+    <!-- 設定彈出式視窗 -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 transition-opacity duration-300">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm mx-4 transform scale-95 transition-transform duration-300">
+            <h2 class="text-2xl font-bold mb-6 text-gray-100 text-center">設定時間</h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <label for="pomodoroInput" class="text-gray-300">番茄時間 (分鐘):</label>
+                    <input type="number" id="pomodoroInput" class="w-24 px-3 py-2 rounded-md bg-gray-700 border-2 border-gray-600 focus:border-red-500 focus:ring-red-500 transition-colors duration-300" min="1" max="60" value="25">
+                </div>
+                <div class="flex items-center justify-between">
+                    <label for="shortBreakInput" class="text-gray-300">短休息 (分鐘):</label>
+                    <input type="number" id="shortBreakInput" class="w-24 px-3 py-2 rounded-md bg-gray-700 border-2 border-gray-600 focus:border-green-500 focus:ring-green-500 transition-colors duration-300" min="1" max="30" value="5">
+                </div>
+                <div class="flex items-center justify-between">
+                    <label for="longBreakInput" class="text-gray-300">長休息 (分鐘):</label>
+                    <input type="number" id="longBreakInput" class="w-24 px-3 py-2 rounded-md bg-gray-700 border-2 border-gray-600 focus:border-blue-500 focus:ring-blue-500 transition-colors duration-300" min="1" max="60" value="15">
+                </div>
+            </div>
+            <div class="flex justify-center space-x-4 mt-8">
+                <button id="saveSettingsBtn" class="bg-red-600 text-white px-6 py-2 rounded-full font-bold hover:bg-red-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-red-400">儲存</button>
+                <button id="cancelSettingsBtn" class="bg-gray-600 text-white px-6 py-2 rounded-full font-bold hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-400">取消</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // 獲取 DOM 元素
+        const timerDisplay = document.getElementById('timer');
+        const progressCircle = document.getElementById('progressCircle');
+        const startStopBtn = document.getElementById('startStopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const pomodoroBtn = document.getElementById('pomodoroBtn');
+        const shortBreakBtn = document.getElementById('shortBreakBtn');
+        const longBreakBtn = document.getElementById('longBreakBtn');
+        const pomodoroCountDisplay = document.getElementById('pomodoroCount');
+
+        const settingsModal = document.getElementById('settingsModal');
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+        const cancelSettingsBtn = document.getElementById('cancelSettingsBtn');
+        const pomodoroInput = document.getElementById('pomodoroInput');
+        const shortBreakInput = document.getElementById('shortBreakInput');
+        const longBreakInput = document.getElementById('longBreakInput');
+
+        const messageModal = document.getElementById('messageModal');
+        const messageText = document.getElementById('messageText');
+        const messageOkBtn = document.getElementById('messageOkBtn');
+
+        // 定義圓形進度環的半徑和周長
+        const radius = 45;
+        const circumference = 2 * Math.PI * radius;
+        progressCircle.style.strokeDasharray = circumference;
+
+        // 定義計時器模式和時間（以秒為單位）
+        const modes = {
+            pomodoro: { time: 25 * 60, progressColor: '#ef4444', btnColor: 'bg-red-600', bodyClass: 'pomodoro-mode' },
+            shortBreak: { time: 5 * 60, progressColor: '#22c55e', btnColor: 'bg-green-600', bodyClass: 'short-break-mode' },
+            longBreak: { time: 15 * 60, progressColor: '#3b82f6', btnColor: 'bg-blue-600', bodyClass: 'long-break-mode' }
+        };
+
+        let currentMode = 'pomodoro';
+        let remainingTime = modes[currentMode].time;
+        let totalTime = modes[currentMode].time;
+        let timerInterval = null;
+        let isPaused = true;
+        let pomodoroCount = 0;
+
+        // 顯示訊息框（取代 alert）
+        function showMessage(text) {
+            messageText.textContent = text;
+            messageModal.classList.remove('hidden');
+        }
+
+        // 播放提醒聲
+        function playAlarm() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.type = 'sine'; // 正弦波
+                oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 音
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + 1); // 淡出
+                oscillator.stop(audioContext.currentTime + 1);
+            } catch (e) {
+                console.error('無法播放提醒聲:', e);
+            }
+        }
+
+        // 更新計時器顯示、進度環和標籤
+        function updateDisplay() {
+            const minutes = Math.floor(remainingTime / 60).toString().padStart(2, '0');
+            const seconds = (remainingTime % 60).toString().padStart(2, '0');
+            const timeString = `${minutes}:${seconds}`;
+            timerDisplay.textContent = timeString;
+
+            // 更新瀏覽器標籤
+            document.title = `${timeString} - 番茄鐘`;
+
+            // 更新進度環
+            const progress = remainingTime / totalTime;
+            const dashOffset = circumference * (1 - progress);
+            progressCircle.style.strokeDashoffset = dashOffset;
+        }
+
+        // 開始或暫停計時器
+        function startStopTimer() {
+            if (isPaused) {
+                isPaused = false;
+                startStopBtn.textContent = '暫停';
+                startStopBtn.classList.remove('bg-green-600');
+                startStopBtn.classList.add('bg-orange-600', 'hover:bg-orange-700');
+                timerInterval = setInterval(() => {
+                    remainingTime--;
+                    updateDisplay();
+
+                    if (remainingTime < 0) {
+                        clearInterval(timerInterval);
+                        playAlarm();
+                        showMessage('時間到！該進行休息或下一個番茄時間了。');
+                        // 自動切換到下一個模式
+                        if (currentMode === 'pomodoro') {
+                            pomodoroCount++;
+                            pomodoroCountDisplay.textContent = pomodoroCount;
+                            switchMode('shortBreak');
+                        } else {
+                            switchMode('pomodoro');
+                        }
+                        isPaused = true;
+                        startStopBtn.textContent = '開始';
+                        startStopBtn.classList.remove('bg-orange-600');
+                        startStopBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                    }
+                }, 1000);
+            } else {
+                isPaused = true;
+                startStopBtn.textContent = '開始';
+                startStopBtn.classList.remove('bg-orange-600');
+                startStopBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                clearInterval(timerInterval);
+            }
+        }
+
+        // 重設計時器
+        function resetTimer() {
+            clearInterval(timerInterval);
+            isPaused = true;
+            startStopBtn.textContent = '開始';
+            startStopBtn.classList.remove('bg-orange-600');
+            startStopBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+            remainingTime = modes[currentMode].time;
+            totalTime = modes[currentMode].time;
+            updateDisplay();
+        }
+
+        // 切換模式
+        function switchMode(mode) {
+            currentMode = mode;
+            resetTimer();
+
+            // 更新按鈕樣式
+            const allButtons = [pomodoroBtn, shortBreakBtn, longBreakBtn];
+            allButtons.forEach(btn => {
+                btn.classList.remove(modes.pomodoro.btnColor, modes.shortBreak.btnColor, modes.longBreak.btnColor);
+                btn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+            });
+            const activeBtn = document.getElementById(`${mode}Btn`);
+            activeBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+            activeBtn.classList.add(modes[mode].btnColor);
+
+            // 更新進度環顏色
+            progressCircle.style.stroke = modes[mode].progressColor;
+        }
+
+        // 開啟設定彈出式視窗
+        function openSettings() {
+            // 載入當前值到輸入欄位
+            pomodoroInput.value = modes.pomodoro.time / 60;
+            shortBreakInput.value = modes.shortBreak.time / 60;
+            longBreakInput.value = modes.longBreak.time / 60;
+            settingsModal.classList.remove('hidden');
+            setTimeout(() => settingsModal.firstElementChild.classList.remove('scale-95'), 10);
+        }
+
+        // 儲存設定並關閉視窗
+        function saveSettings() {
+            const newPomodoroTime = parseInt(pomodoroInput.value) * 60;
+            const newShortBreakTime = parseInt(shortBreakInput.value) * 60;
+            const newLongBreakTime = parseInt(longBreakInput.value) * 60;
+
+            if (isNaN(newPomodoroTime) || isNaN(newShortBreakTime) || isNaN(newLongBreakTime) || newPomodoroTime <= 0 || newShortBreakTime <= 0 || newLongBreakTime <= 0) {
+                 showMessage('請輸入有效時間。');
+                 return;
+            }
+
+            modes.pomodoro.time = newPomodoroTime;
+            modes.shortBreak.time = newShortBreakTime;
+            modes.longBreak.time = newLongBreakTime;
+
+            closeSettings();
+            resetTimer();
+        }
+
+        // 關閉設定彈出式視窗
+        function closeSettings() {
+            settingsModal.firstElementChild.classList.add('scale-95');
+            setTimeout(() => settingsModal.classList.add('hidden'), 300);
+        }
+
+        // 添加事件監聽器
+        startStopBtn.addEventListener('click', startStopTimer);
+        resetBtn.addEventListener('click', resetTimer);
+        settingsBtn.addEventListener('click', openSettings);
+        pomodoroBtn.addEventListener('click', () => switchMode('pomodoro'));
+        shortBreakBtn.addEventListener('click', () => switchMode('shortBreak'));
+        longBreakBtn.addEventListener('click', () => switchMode('longBreak'));
+        saveSettingsBtn.addEventListener('click', saveSettings);
+        cancelSettingsBtn.addEventListener('click', closeSettings);
+        messageOkBtn.addEventListener('click', () => messageModal.classList.add('hidden'));
+
+        // 初始設定
+        switchMode('pomodoro');
+    </script>
+</body>
+</html>
