@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>番茄鐘｜Pomodoro</title>
+  <meta name="description" content="簡潔、現代、單檔版番茄鐘。支援短/長休息、自動下一段、通知與音效、統計、快捷鍵。" />
+  <style>
+    :root {
+      --card-bg: rgba(255,255,255,0.7);
+      --card-border: rgba(255,255,255,0.5);
+      --text: #0f172a; /* slate-900 */
+      --muted: #475569; /* slate-600 */
+      --btn: #111827; /* gray-900 */
+      --btn-text: #ffffff;
+      --ring-bg: rgba(255,255,255,0.55);
+      --shadow: 0 10px 30px rgba(0,0,0,.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --card-bg: rgba(17,24,39,0.55);
+        --card-border: rgba(255,255,255,0.08);
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --btn: #e5e7eb;
+        --btn-text: #111827;
+        --ring-bg: rgba(255,255,255,0.15);
+        --shadow: 0 10px 30px rgba(0,0,0,.35);
+      }
+    }
+    /* 主題色依模式切換 */
+    body.work { --grad1: #ffecd2; --grad2: #fcb69f; --accent: #f97316; --accent-weak:#fdba74; }
+    body.break { --grad1: #d4fc79; --grad2: #96e6a1; --accent: #10b981; --accent-weak:#6ee7b7; }
+    body.long  { --grad1: #cfd9df; --grad2: #e2ebf0; --accent: #6366f1; --accent-weak:#a5b4fc; }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans TC', PingFangTC, 'Heiti TC', 'Microsoft JhengHei', sans-serif;
+      background: linear-gradient(135deg, var(--grad1), var(--grad2));
+      color: var(--text);
+      display: grid; place-items: center;
+      transition: background 600ms ease;
+    }
+
+    .app {
+      width: min(920px, 92vw);
+      margin: 28px auto; padding: 28px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    header h1 { font-size: clamp(20px, 2.4vw, 28px); margin:0; letter-spacing:.5px; }
+    header .sub { color: var(--muted); font-size: 13px; }
+
+    .grid { display:grid; grid-template-columns: 1fr 480px; gap: 28px; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+    /* 圓形進度 */
+    .dial {
+      position: relative; aspect-ratio: 1/1; width: 100%; max-width: 480px; margin-inline: auto;
+      display:grid; place-items:center;
+    }
+    .dial svg { position:absolute; inset:0; }
+    .dial .bg { stroke: var(--ring-bg); }
+    .dial .fg { stroke: var(--accent); transition: stroke-dashoffset .3s linear, stroke .3s ease; filter: drop-shadow(0 6px 10px rgba(0,0,0,.12)); }
+    .dial .center { position:relative; text-align:center; }
+    .time { font-size: clamp(40px, 7vw, 72px); font-weight: 700; letter-spacing: 1px; }
+    .mode-pill { display:inline-block; margin-top:6px; padding:6px 12px; border-radius: 999px; font-size: 12px; background: var(--accent-weak); color:#111827; }
+
+    .controls { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:18px; }
+    button {
+      appearance: none; border: 1px solid transparent; background: var(--btn); color: var(--btn-text);
+      padding: 10px 16px; border-radius: 14px; font-weight: 600; letter-spacing:.2px; cursor: pointer; transition: transform .06s ease, opacity .2s ease, background .2s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); opacity:.95; }
+    .btn-ghost { background: transparent; color: var(--text); border-color: var(--card-border); }
+    .btn-accent { background: var(--accent); color: #111827; }
+
+    .modes { display:flex; gap:10px; flex-wrap:wrap; }
+    .modes button { background: transparent; color: var(--text); border:1px solid var(--card-border); }
+    .modes button.active { background: var(--accent); color:#111827; border-color: transparent; }
+
+    .stats { display:flex; flex-wrap:wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+    .stat { display:flex; gap:6px; align-items:center; }
+
+    details.settings { margin-top: 8px; border-top: 1px dashed var(--card-border); padding-top: 16px; }
+    details.settings > summary { cursor: pointer; user-select:none; color: var(--muted); margin-bottom: 10px; }
+    .settings-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:16px; }
+    @media (max-width: 640px) { .settings-grid { grid-template-columns: 1fr; } }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field label { font-size: 12px; color: var(--muted); }
+    .field input[type="number"] { padding:10px 12px; border-radius: 12px; border:1px solid var(--card-border); background: transparent; color: var(--text); }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    footer { margin-top: 14px; color: var(--muted); font-size: 12px; text-align:center; }
+    kbd { background: rgba(0,0,0,.12); border-radius:6px; padding: 2px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 11px; }
+  </style>
+</head>
+<body class="work">
+  <div class="app">
+    <header>
+      <div>
+        <h1>番茄鐘</h1>
+        <div class="sub">工作 25 分鐘 · 短休 5 分鐘 · 長休 15 分鐘（預設）</div>
+      </div>
+      <div class="stats">
+        <div class="stat">今日完成 <strong id="statToday">0</strong></div>
+        <div class="stat">累計完成 <strong id="statTotal">0</strong></div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section>
+        <div class="dial" aria-label="倒數計時">
+          <svg viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- 外圓半徑 r=100, 邊距 10 -->
+            <circle class="bg" cx="110" cy="110" r="100" fill="none" stroke-width="16" stroke-linecap="round" />
+            <circle class="fg" cx="110" cy="110" r="100" fill="none" stroke-width="16" stroke-linecap="round"
+                    stroke-dasharray="628" stroke-dashoffset="0" transform="rotate(-90 110 110)" />
+          </svg>
+          <div class="center">
+            <div class="time" id="time">25:00</div>
+            <div class="mode-pill" id="modePill">工作中</div>
+            <div class="controls" role="group" aria-label="計時控制">
+              <button id="btnStart" class="btn-accent">開始</button>
+              <button id="btnPause" class="btn-ghost" disabled>暫停</button>
+              <button id="btnReset" class="btn-ghost">重置</button>
+              <button id="btnSkip" class="btn-ghost" title="跳到下一段">跳過</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="row" style="justify-content:space-between; align-items: center;">
+          <div class="modes" role="tablist" aria-label="模式">
+            <button role="tab" data-mode="work" class="active">工作</button>
+            <button role="tab" data-mode="break">短休息</button>
+            <button role="tab" data-mode="long">長休息</button>
+          </div>
+        </div>
+
+        <details class="settings">
+          <summary>設定</summary>
+          <form id="settingsForm">
+            <div class="settings-grid">
+              <div class="field"><label for="workM">工作（分鐘）</label><input id="workM" type="number" min="1" max="180" value="25" /></div>
+              <div class="field"><label for="shortM">短休息（分鐘）</label><input id="shortM" type="number" min="1" max="60" value="5" /></div>
+              <div class="field"><label for="longM">長休息（分鐘）</label><input id="longM" type="number" min="1" max="120" value="15" /></div>
+              <div class="field"><label for="longEvery">每幾顆番茄進入長休息</label><input id="longEvery" type="number" min="1" max="12" value="4" /></div>
+              <div class="field"><label><input id="autoStart" type="checkbox" checked /> 工作段結束後自動開始休息</label></div>
+            </div>
+            <div class="row" style="margin-top:12px;">
+              <button type="submit" class="btn-accent">儲存設定</button>
+              <button type="button" id="btnResetStats" class="btn-ghost">清除統計</button>
+            </div>
+          </form>
+        </details>
+
+        <footer style="margin-top:20px; text-align:left;">
+          快捷鍵：<kbd>Space</kbd> 開始/暫停、<kbd>R</kbd> 重置、<kbd>N</kbd> 跳過、<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 切換到 工作/短休/長休。
+        </footer>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    ;(() => {
+      const $ = (sel) => document.querySelector(sel);
+      const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+      const elTime = $('#time');
+      const elModePill = $('#modePill');
+      const elStart = $('#btnStart');
+      const elPause = $('#btnPause');
+      const elReset = $('#btnReset');
+      const elSkip = $('#btnSkip');
+      const elFg = document.querySelector('.dial .fg');
+      const elToday = $('#statToday');
+      const elTotal = $('#statTotal');
+      const modeTabs = $$('.modes [data-mode]');
+
+      const form = $('#settingsForm');
+      const inputWork = $('#workM');
+      const inputShort = $('#shortM');
+      const inputLong = $('#longM');
+      const inputLongEvery = $('#longEvery');
+      const inputAuto = $('#autoStart');
+
+      const CIRC = 2 * Math.PI * 100; // r=100 => 628.3
+      elFg.setAttribute('stroke-dasharray', String(CIRC));
+
+      const LS_SETTINGS = 'pomodoro:settings:v1';
+      const LS_STATE = 'pomodoro:state:v1';
+
+      let audioCtx = null;
+      let interval = null;
+      let endAt = null; // timestamp ms
+
+      const defaultSettings = { work: 25*60, short: 5*60, long: 15*60, longEvery: 4, autoStart: true };
+      const settings = { ...defaultSettings, ...loadSettings() };
+
+      const todayStr = () => new Date().toISOString().slice(0,10);
+      const initState = () => ({ mode: 'work', remaining: settings.work, running: false, pomodoros: 0, total: 0, today: { date: todayStr(), count: 0 } });
+      let state = { ...initState(), ...loadState() };
+
+      // 日期跨天處理
+      if (!state.today || state.today.date !== todayStr()) {
+        state.today = { date: todayStr(), count: 0 };
+      }
+
+      // 將設定填回表單
+      inputWork.value = Math.round(settings.work/60);
+      inputShort.value = Math.round(settings.short/60);
+      inputLong.value = Math.round(settings.long/60);
+      inputLongEvery.value = settings.longEvery;
+      inputAuto.checked = !!settings.autoStart;
+
+      // 初始化 UI
+      setMode(state.mode, true);
+      updateUI();
+
+      function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); }
+      function loadSettings() {
+        try { return JSON.parse(localStorage.getItem(LS_SETTINGS)) || {}; } catch { return {}; }
+      }
+      function saveState() { localStorage.setItem(LS_STATE, JSON.stringify(state)); }
+      function loadState() { try { return JSON.parse(localStorage.getItem(LS_STATE)) || {}; } catch { return {}; } }
+
+      function fmt(sec) {
+        sec = Math.max(0, Math.round(sec));
+        const m = Math.floor(sec / 60); const s = sec % 60;
+        return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+      }
+
+      function setProgress(remain, total) {
+        const p = 1 - (remain / total);
+        const off = CIRC * p;
+        elFg.style.strokeDashoffset = String(off);
+      }
+
+      function themeByMode(mode) {
+        document.body.classList.remove('work','break','long');
+        document.body.classList.add(mode === 'break' ? 'break' : mode);
+      }
+
+      function labelByMode(mode) {
+        return mode === 'work' ? '工作中' : (mode === 'break' ? '短休息' : '長休息');
+      }
+
+      function modeDuration(mode) {
+        return mode === 'work' ? settings.work : (mode === 'break' ? settings.short : settings.long);
+      }
+
+      function setMode(mode, keepRemain=false) {
+        state.mode = mode;
+        themeByMode(mode);
+        elModePill.textContent = labelByMode(mode);
+        modeTabs.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+        if (!keepRemain) state.remaining = modeDuration(mode);
+        document.title = `${fmt(state.remaining)}｜番茄鐘`;
+        setProgress(state.remaining, modeDuration(mode));
+        saveState();
+      }
+
+      function startTimer() {
+        if (state.running) return;
+        state.running = true;
+        endAt = Date.now() + state.remaining * 1000;
+        clearInterval(interval);
+        interval = setInterval(tick, 250);
+        updateButtons();
+        // 通知權限
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission().catch(() => {});
+        }
+        // 啟用音訊
+        if (!audioCtx && 'AudioContext' in window) {
+          try { audioCtx = new AudioContext(); } catch {}
+        }
+        saveState();
+      }
+
+      function pauseTimer() {
+        if (!state.running) return;
+        state.running = false;
+        clearInterval(interval);
+        interval = null;
+        // 重新計算剩餘
+        state.remaining = Math.max(0, Math.round((endAt - Date.now())/1000));
+        endAt = null;
+        updateButtons();
+        saveState();
+      }
+
+      function resetTimer() {
+        pauseTimer();
+        state.remaining = modeDuration(state.mode);
+        setProgress(state.remaining, modeDuration(state.mode));
+        updateUI();
+        saveState();
+      }
+
+      function nextSegment(auto=false) {
+        // 結束當前段落後的切換邏輯
+        if (state.mode === 'work') {
+          state.pomodoros += 1;
+          state.total = (state.total || 0) + 1;
+          state.today.count = (state.today?.count || 0) + 1;
+          const needLong = state.pomodoros % settings.longEvery === 0;
+          setMode(needLong ? 'long' : 'break');
+        } else {
+          setMode('work');
+        }
+        if (auto) {
+          if (settings.autoStart || state.mode === 'work') startTimer();
+        } else {
+          updateButtons();
+        }
+        updateUI();
+        notify();
+        beep();
+        saveState();
+      }
+
+      function tick() {
+        const remain = Math.max(0, Math.round((endAt - Date.now())/1000));
+        if (remain !== state.remaining) {
+          state.remaining = remain;
+          updateUI();
+        }
+        if (remain <= 0) {
+          pauseTimer();
+          nextSegment(true);
+        }
+      }
+
+      function updateButtons() {
+        elStart.disabled = state.running;
+        elPause.disabled = !state.running;
+      }
+
+      function updateUI() {
+        elTime.textContent = fmt(state.remaining);
+        document.title = `${fmt(state.remaining)}｜番茄鐘`;
+        setProgress(state.remaining, modeDuration(state.mode));
+        elToday.textContent = state.today?.count ?? 0;
+        elTotal.textContent = state.total ?? 0;
+      }
+
+      function notify() {
+        const text = state.mode === 'work' ? '開始工作！加油 💪' : (state.mode === 'break' ? '休息一下 ☕' : '長休息時間到 🧘');
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try { new Notification('番茄鐘', { body: text }); } catch {}
+        }
+      }
+
+      function beep() {
+        if (!audioCtx) return;
+        try {
+          const now = audioCtx.currentTime;
+          const seq = [880, 1180, 1480];
+          seq.forEach((freq, i) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.value = freq; o.type = 'sine';
+            const t0 = now + i * 0.12;
+            g.gain.setValueAtTime(0, t0);
+            g.gain.linearRampToValueAtTime(0.3, t0 + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+            o.start(t0); o.stop(t0 + 0.22);
+          });
+        } catch {}
+      }
+
+      // 綁定事件
+      elStart.addEventListener('click', startTimer);
+      elPause.addEventListener('click', pauseTimer);
+      elReset.addEventListener('click', resetTimer);
+      elSkip.addEventListener('click', () => { pauseTimer(); nextSegment(false); });
+
+      modeTabs.forEach(btn => btn.addEventListener('click', () => {
+        pauseTimer();
+        setMode(btn.dataset.mode);
+        updateUI();
+      }));
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        settings.work = Math.max(1, +inputWork.value|0) * 60;
+        settings.short = Math.max(1, +inputShort.value|0) * 60;
+        settings.long = Math.max(1, +inputLong.value|0) * 60;
+        settings.longEvery = Math.max(1, +inputLongEvery.value|0);
+        settings.autoStart = !!inputAuto.checked;
+        saveSettings();
+        // 依當前模式重設剩餘
+        state.remaining = modeDuration(state.mode);
+        updateUI();
+      });
+
+      $('#btnResetStats').addEventListener('click', () => {
+        if (confirm('確定要清除統計嗎？這將重置「累計完成」與「今日完成」。')) {
+          state.pomodoros = 0; state.total = 0; state.today = { date: todayStr(), count: 0 };
+          saveState(); updateUI();
+        }
+      });
+
+      // 鍵盤快捷鍵
+      window.addEventListener('keydown', (ev) => {
+        const tag = (ev.target && ev.target.tagName) || '';
+        if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return; // 避免輸入衝突
+        if (ev.code === 'Space') { ev.preventDefault(); state.running ? pauseTimer() : startTimer(); }
+        else if (ev.key === 'r' || ev.key === 'R') { resetTimer(); }
+        else if (ev.key === 'n' || ev.key === 'N') { pauseTimer(); nextSegment(false); }
+        else if (ev.key === '1') { pauseTimer(); setMode('work'); updateUI(); }
+        else if (ev.key === '2') { pauseTimer(); setMode('break'); updateUI(); }
+        else if (ev.key === '3') { pauseTimer(); setMode('long'); updateUI(); }
+      });
+
+      // 可見度變更：避免背景時不準確
+      document.addEventListener('visibilitychange', () => {
+        if (state.running && endAt) {
+          // 立刻更新一次剩餘
+          state.remaining = Math.max(0, Math.round((endAt - Date.now())/1000));
+          updateUI();
+        }
+      });
+
+      // 首次載入同步 UI
+      updateButtons();
+    })();
+  </script>
+</body>
+</html>
