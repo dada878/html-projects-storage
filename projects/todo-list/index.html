@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>To‑Do List</title>
+  <style>
+    :root{
+      --bg: #0f172a;          /* slate-900 */
+      --card: #111827;        /* gray-900 */
+      --text: #e5e7eb;        /* gray-200 */
+      --muted:#9ca3af;        /* gray-400 */
+      --primary:#22d3ee;      /* cyan-400 */
+      --primary-2:#67e8f9;    /* cyan-300 */
+      --accent:#a78bfa;       /* violet-400 */
+      --danger:#f87171;       /* red-400 */
+      --ok:#34d399;           /* emerald-400 */
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f1f5f9;        /* slate-100 */
+        --card:#ffffff;
+        --text:#0f172a;      /* slate-900 */
+        --muted:#475569;     /* slate-600 */
+        --shadow: 0 10px 20px rgba(2,6,23,.08);
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Noto Sans TC", Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color:var(--text);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(103,232,249,.25), transparent 60%),
+        radial-gradient(900px 500px at 110% 10%, rgba(167,139,250,.25), transparent 60%),
+        linear-gradient(180deg, var(--bg), var(--bg));
+      display:grid; place-items:center;
+      padding:24px;
+    }
+    .card{
+      width:min(820px, 100%);
+      background:var(--card);
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      padding:24px 22px 20px;
+      border:1px solid rgba(255,255,255,.06);
+    }
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+    .title{font-size:24px;font-weight:800;letter-spacing:.4px}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      background:linear-gradient(90deg, rgba(34,211,238,.15), rgba(167,139,250,.15));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:999px;padding:6px 12px;font-size:12px;color:var(--muted)
+    }
+    /* input row */
+    .new-row{display:flex;gap:10px;margin:10px 0 18px}
+    .input{flex:1;border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:12px 14px;font-size:16px;color:var(--text);background:rgba(255,255,255,.04);outline:none}
+    .input::placeholder{color:var(--muted)}
+    .btn{border:0;border-radius:12px;padding:12px 14px;font-size:14px;font-weight:700;cursor:pointer;transition:.15s transform ease, .2s filter ease; display:inline-flex; align-items:center; gap:8px}
+    .btn:active{transform:scale(.98)}
+    .btn-primary{background:linear-gradient(90deg, var(--primary), var(--primary-2)); color:#0c4a6e}
+    .btn-ghost{background:transparent;color:var(--muted)}
+
+    /* filters */
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 2px 16px}
+    .filters{display:flex;gap:6px;flex-wrap:wrap}
+    .filter{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--muted);cursor:pointer}
+    .filter[aria-pressed="true"]{background:rgba(34,211,238,.12);color:var(--text);border-color:rgba(34,211,238,.35)}
+    .count{font-size:13px;color:var(--muted)}
+
+    /* list */
+    ul.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    .item{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);border-radius:14px}
+    .item[draggable="true"]{cursor:grab}
+    .item.dragging{opacity:.6}
+    .checkbox{appearance:none;width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);display:grid;place-items:center;cursor:pointer;transition:.15s}
+    .checkbox:checked{background:var(--ok);border-color:var(--ok)}
+    .checkbox:checked::after{content:"✓";font-weight:900;color:#052e1a;font-size:14px}
+    .label{user-select:none}
+    .text{font-size:16px;line-height:1.4}
+    .done .text{color:var(--muted); text-decoration: line-through;}
+
+    .actions{display:flex;gap:4px}
+    .icon-btn{background:transparent;border:0;border-radius:10px;padding:8px;cursor:pointer;color:var(--muted)}
+    .icon-btn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+
+    .edit-input{width:100%;border:1px dashed rgba(255,255,255,.25);background:rgba(255,255,255,.04);color:var(--text);border-radius:10px;padding:8px 10px;font-size:16px}
+
+    footer{display:flex;justify-content:space-between;align-items:center;margin-top:16px;color:var(--muted);font-size:12px}
+    .link{color:var(--primary)}
+    .clear{color:var(--danger)}
+
+    @media (max-width:520px){
+      header{flex-direction:column;align-items:flex-start}
+      .toolbar{flex-direction:column;align-items:flex-start}
+    }
+  </style>
+</head>
+<body>
+  <div class="card" role="application" aria-label="To-Do List">
+    <header>
+      <div class="title">📋 To‑Do List</div>
+      <div class="pill" id="statusPill">0 個未完成</div>
+    </header>
+
+    <div class="new-row" aria-label="新增待辦">
+      <input id="newInput" class="input" type="text" placeholder="輸入待辦事項，按 Enter 新增…" autocomplete="off" aria-label="待辦內容" />
+      <button id="addBtn" class="btn btn-primary" aria-label="新增">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        新增
+      </button>
+    </div>
+
+    <div class="toolbar">
+      <div class="filters" role="toolbar" aria-label="篩選">
+        <button class="filter" data-filter="all" aria-pressed="true">全部</button>
+        <button class="filter" data-filter="active" aria-pressed="false">未完成</button>
+        <button class="filter" data-filter="completed" aria-pressed="false">已完成</button>
+      </div>
+      <div class="count">
+        <span id="countText">0 個項目</span>
+      </div>
+    </div>
+
+    <ul id="list" class="list" role="list"></ul>
+
+    <footer>
+      <button id="clearCompleted" class="btn btn-ghost clear">清除已完成</button>
+      <div>拖曳可排序 · 本地儲存不會丟失</div>
+    </footer>
+  </div>
+
+  <script>
+    (function(){
+      'use strict';
+      /** @type {HTMLInputElement} */
+      const newInput = document.getElementById('newInput');
+      const addBtn = document.getElementById('addBtn');
+      const listEl = document.getElementById('list');
+      const countText = document.getElementById('countText');
+      const statusPill = document.getElementById('statusPill');
+      const clearCompletedBtn = document.getElementById('clearCompleted');
+      const filterBtns = Array.from(document.querySelectorAll('.filter'));
+
+      const STORAGE_KEY = 'todo-list-v1';
+      /** @typedef {{id:string,text:string,done:boolean,createdAt:number}} Task */
+      /** @type {Task[]} */
+      let tasks = load();
+      let filter = 'all'; // all | active | completed
+
+      function save(){
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      }
+      function load(){
+        try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+        catch{ return []; }
+      }
+      function uid(){ return Math.random().toString(36).slice(2,9) + Date.now().toString(36); }
+
+      function addTask(text){
+        text = text.trim();
+        if(!text) return;
+        tasks.unshift({ id: uid(), text, done:false, createdAt: Date.now() });
+        save();
+        newInput.value = '';
+        render();
+      }
+      function toggleTask(id){
+        const t = tasks.find(t=>t.id===id); if(!t) return; t.done = !t.done; save(); render();
+      }
+      function deleteTask(id){
+        tasks = tasks.filter(t=>t.id!==id); save(); render();
+      }
+      function editTask(id, newText){
+        const t = tasks.find(t=>t.id===id); if(!t) return; t.text = newText.trim() || t.text; save(); render();
+      }
+      function clearCompleted(){ tasks = tasks.filter(t=>!t.done); save(); render(); }
+
+      function setFilter(name){
+        filter = name;
+        for(const btn of filterBtns){ btn.setAttribute('aria-pressed', String(btn.dataset.filter===name)); }
+        render();
+      }
+
+      function getFiltered(){
+        if(filter==='active') return tasks.filter(t=>!t.done);
+        if(filter==='completed') return tasks.filter(t=>t.done);
+        return tasks;
+      }
+
+      function render(){
+        const items = getFiltered();
+        listEl.innerHTML = '';
+        for(const t of items){ listEl.appendChild(renderItem(t)); }
+        const remaining = tasks.filter(t=>!t.done).length;
+        countText.textContent = `${tasks.length} 個項目`;
+        statusPill.textContent = `${remaining} 個未完成`;
+        document.title = remaining ? `(${remaining}) To‑Do List` : 'To‑Do List';
+      }
+
+      function renderItem(task){
+        const li = document.createElement('li');
+        li.className = 'item' + (task.done ? ' done' : '');
+        li.setAttribute('role','listitem');
+        li.draggable = true;
+        li.dataset.id = task.id;
+
+        // checkbox
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'checkbox';
+        cb.checked = task.done;
+        cb.ariaLabel = '切換完成狀態';
+        cb.addEventListener('change', ()=> toggleTask(task.id));
+
+        const labelWrap = document.createElement('div');
+        labelWrap.className = 'label';
+
+        const text = document.createElement('div');
+        text.className = 'text';
+        text.textContent = task.text;
+        labelWrap.appendChild(text);
+
+        // actions
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const editBtn = iconButton(editIcon(), '編輯');
+        editBtn.addEventListener('click', ()=> startEdit(li, task));
+
+        const delBtn = iconButton(trashIcon(), '刪除');
+        delBtn.addEventListener('click', ()=> deleteTask(task.id));
+
+        actions.append(editBtn, delBtn);
+
+        li.append(cb, labelWrap, actions);
+
+        // drag events
+        li.addEventListener('dragstart', ev=>{
+          li.classList.add('dragging');
+          ev.dataTransfer.setData('text/plain', task.id);
+        });
+        li.addEventListener('dragend', ()=> li.classList.remove('dragging'));
+        li.addEventListener('dragover', ev=>{
+          ev.preventDefault();
+          const draggingId = ev.dataTransfer.getData('text/plain');
+          if(!draggingId || draggingId===task.id) return;
+          const draggingEl = [...listEl.children].find(el=>el.dataset.id===draggingId);
+          const rect = li.getBoundingClientRect();
+          const before = (ev.clientY - rect.top) < rect.height/2;
+          if(before) listEl.insertBefore(draggingEl, li); else listEl.insertBefore(draggingEl, li.nextSibling);
+        });
+        li.addEventListener('drop', ()=>{ syncOrderFromDOM(); save(); render(); });
+
+        return li;
+      }
+
+      function startEdit(li, task){
+        const label = li.querySelector('.label');
+        const actions = li.querySelector('.actions');
+        label.innerHTML = '';
+        const input = document.createElement('input');
+        input.className = 'edit-input';
+        input.type = 'text';
+        input.value = task.text;
+        label.appendChild(input);
+        input.focus();
+        input.setSelectionRange(task.text.length, task.text.length);
+
+        const confirmBtn = iconButton(checkIcon(), '儲存');
+        const cancelBtn = iconButton(closeIcon(), '取消');
+        actions.innerHTML = '';
+        actions.append(confirmBtn, cancelBtn);
+
+        const finish = (ok)=>{
+          if(ok){ editTask(task.id, input.value); }
+          else { render(); }
+        };
+        confirmBtn.addEventListener('click', ()=> finish(true));
+        cancelBtn.addEventListener('click', ()=> finish(false));
+        input.addEventListener('keydown', (e)=>{
+          if(e.key==='Enter') finish(true);
+          if(e.key==='Escape') finish(false);
+        });
+      }
+
+      function iconButton(svg, label){
+        const btn = document.createElement('button');
+        btn.className = 'icon-btn';
+        btn.ariaLabel = label;
+        btn.innerHTML = svg;
+        return btn;
+      }
+
+      function syncOrderFromDOM(){
+        const ids = [...listEl.children].map(el=>el.dataset.id);
+        // reorder tasks to match ids order while preserving others (from other filters)
+        const map = new Map(tasks.map(t=>[t.id, t]));
+        const re = [];
+        for(const id of ids){ if(map.has(id)) re.push(map.get(id)); }
+        // append any not in filtered DOM (when filter != all)
+        for(const t of tasks){ if(!ids.includes(t.id)) re.push(t); }
+        tasks = re;
+      }
+
+      function editIcon(){ return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`}
+      function trashIcon(){ return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`}
+      function checkIcon(){ return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`}
+      function closeIcon(){ return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`}
+
+      // events
+      addBtn.addEventListener('click', ()=> addTask(newInput.value));
+      newInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addTask(newInput.value); });
+      clearCompletedBtn.addEventListener('click', clearCompleted);
+      for(const btn of filterBtns){ btn.addEventListener('click', ()=> setFilter(btn.dataset.filter)); }
+
+      // initial
+      render();
+    })();
+  </script>
+</body>
+</html>
