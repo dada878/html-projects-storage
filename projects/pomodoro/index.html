@@ -1,0 +1,515 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+// A single-file Pomodoro (番茄鐘) web app.
+// - TailwindCSS for styling (no external UI libs required)
+// - Modes: Focus / Short Break / Long Break
+// - Auto-start toggles, cycles before long break
+// - Progress ring, keyboard shortcuts, desktop notifications, sound alert
+// - Settings saved to localStorage
+// - Dark-mode friendly (respects prefers-color-scheme)
+
+const STORAGE_KEY = "pomodoro.settings.v1";
+const STATE_KEY = "pomodoro.state.v1";
+
+function useLocalStorage(key, initialValue) {
+  const [value, setValue] = useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }, [key, value]);
+  return [value, setValue];
+}
+
+const defaultSettings = {
+  focusMin: 25,
+  shortMin: 5,
+  longMin: 15,
+  cyclesBeforeLong: 4,
+  autoStartBreaks: true,
+  autoStartFocus: false,
+  volume: 0.6,
+  notifications: false,
+};
+
+function sec(n) { return Math.max(0, Math.floor(n)); }
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+
+function formatTime(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const mm = Math.floor(s / 60).toString().padStart(2, "0");
+  const ss = (s % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function useInterval(callback, delay) {
+  const savedRef = useRef(callback);
+  useEffect(() => { savedRef.current = callback; }, [callback]);
+  useEffect(() => {
+    if (delay == null) return;
+    const id = setInterval(() => savedRef.current(), delay);
+    return () => clearInterval(id);
+  }, [delay]);
+}
+
+function beep(volume = 0.6) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880; // A5
+    g.gain.value = volume;
+    o.connect(g);
+    g.connect(ctx.destination);
+    const now = ctx.currentTime;
+    o.start(now);
+    o.frequency.exponentialRampToValueAtTime(440, now + 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    o.stop(now + 0.4);
+  } catch {}
+}
+
+function notify(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") new Notification(title, { body });
+}
+
+const MODE = { FOCUS: "focus", SHORT: "short", LONG: "long" };
+
+export default function PomodoroApp() {
+  const [settings, setSettings] = useLocalStorage(STORAGE_KEY, defaultSettings);
+
+  const [state, setState] = useLocalStorage(STATE_KEY, {
+    mode: MODE.FOCUS,
+    remaining: defaultSettings.focusMin * 60,
+    isRunning: false,
+    completedFocus: 0, // total completed focus sessions (for stats)
+    cycle: 0, // count of focus sessions in the current long-break cycle
+    lastDate: new Date().toDateString(),
+    task: "",
+  });
+
+  // Daily reset of counters
+  useEffect(() => {
+    const today = new Date().toDateString();
+    if (state.lastDate !== today) {
+      setState({ ...state, lastDate: today, completedFocus: 0, cycle: 0 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync remaining when mode or settings change (only if not running)
+  useEffect(() => {
+    if (state.isRunning) return;
+    const seconds =
+      state.mode === MODE.FOCUS
+        ? settings.focusMin * 60
+        : state.mode === MODE.SHORT
+        ? settings.shortMin * 60
+        : settings.longMin * 60;
+    setState(s => ({ ...s, remaining: sec(seconds) }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.focusMin, settings.shortMin, settings.longMin, state.mode]);
+
+  // Ticker
+  useInterval(() => {
+    if (!state.isRunning) return;
+    if (state.remaining > 0) {
+      setState(s => ({ ...s, remaining: s.remaining - 1 }));
+    } else {
+      onSessionComplete();
+    }
+  }, 1000);
+
+  // Document title
+  useEffect(() => {
+    const label = state.mode === MODE.FOCUS ? "專注" : state.mode === MODE.SHORT ? "短休" : "長休";
+    document.title = `${formatTime(state.remaining)} • ${label} – 番茄鐘`;
+  }, [state.remaining, state.mode]);
+
+  const totalSecondsForMode = useMemo(() => {
+    return state.mode === MODE.FOCUS
+      ? settings.focusMin * 60
+      : state.mode === MODE.SHORT
+      ? settings.shortMin * 60
+      : settings.longMin * 60;
+  }, [state.mode, settings]);
+
+  const progress = useMemo(() => {
+    const t = totalSecondsForMode || 1;
+    return clamp(1 - state.remaining / t, 0, 1);
+  }, [state.remaining, totalSecondsForMode]);
+
+  function switchMode(mode) {
+    setState(s => ({
+      ...s,
+      mode,
+      isRunning: false,
+      remaining:
+        mode === MODE.FOCUS
+          ? settings.focusMin * 60
+          : mode === MODE.SHORT
+          ? settings.shortMin * 60
+          : settings.longMin * 60,
+    }));
+  }
+
+  function startPause() {
+    setState(s => ({ ...s, isRunning: !s.isRunning }));
+  }
+
+  function reset() {
+    setState(s => ({
+      ...s,
+      isRunning: false,
+      remaining:
+        s.mode === MODE.FOCUS
+          ? settings.focusMin * 60
+          : s.mode === MODE.SHORT
+          ? settings.shortMin * 60
+          : settings.longMin * 60,
+    }));
+  }
+
+  function skip() {
+    setState(s => ({ ...s, remaining: 0 }));
+  }
+
+  function onSessionComplete() {
+    // Sound & notification
+    beep(settings.volume);
+    if (settings.notifications) {
+      const next = nextModeAfter(state.mode, state.cycle, settings.cyclesBeforeLong);
+      const currLabel = labelOf(state.mode);
+      const nextLabel = labelOf(next);
+      notify(`「${currLabel}」完成`, `下一個階段：${nextLabel}`);
+    }
+
+    if (state.mode === MODE.FOCUS) {
+      const newCycle = state.cycle + 1;
+      const shouldLong = newCycle >= settings.cyclesBeforeLong;
+      const nextMode = shouldLong ? MODE.LONG : MODE.SHORT;
+      setState(s => ({
+        ...s,
+        completedFocus: s.completedFocus + 1,
+        cycle: shouldLong ? 0 : newCycle,
+        mode: nextMode,
+        remaining: sec((shouldLong ? settings.longMin : settings.shortMin) * 60),
+        isRunning: shouldLong ? settings.autoStartBreaks : settings.autoStartBreaks,
+      }));
+    } else {
+      // Came from a break → go to focus
+      setState(s => ({
+        ...s,
+        mode: MODE.FOCUS,
+        remaining: sec(settings.focusMin * 60),
+        isRunning: settings.autoStartFocus,
+      }));
+    }
+  }
+
+  function nextModeAfter(mode, cycle, cyclesBeforeLong) {
+    if (mode === MODE.FOCUS) return cycle + 1 >= cyclesBeforeLong ? MODE.LONG : MODE.SHORT;
+    return MODE.FOCUS;
+  }
+
+  function labelOf(mode) {
+    return mode === MODE.FOCUS ? "專注" : mode === MODE.SHORT ? "短休" : "長休";
+  }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKey(e) {
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      if (e.code === "Space") { e.preventDefault(); startPause(); }
+      if (e.key.toLowerCase() === "r") reset();
+      if (e.key.toLowerCase() === "n") skip();
+      if (e.key === "1") switchMode(MODE.FOCUS);
+      if (e.key === "2") switchMode(MODE.SHORT);
+      if (e.key === "3") switchMode(MODE.LONG);
+      if (e.key === "+") setSettings(s => ({ ...s, volume: clamp(s.volume + 0.05, 0, 1) }));
+      if (e.key === "-") setSettings(s => ({ ...s, volume: clamp(s.volume - 0.05, 0, 1) }));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSettings]);
+
+  const radius = 140;
+  const stroke = 14;
+  const C = 2 * Math.PI * radius;
+  const dash = C * progress;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100">
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <header className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">番茄鐘 <span className="opacity-60 text-base align-middle">Pomodoro</span></h1>
+          <div className="flex items-center gap-2 text-sm opacity-80">
+            <kbd className="px-1.5 py-0.5 rounded border border-slate-400/40">Space</kbd>
+            <span>開始/暫停</span>
+            <span className="mx-1">·</span>
+            <kbd className="px-1.5 py-0.5 rounded border border-slate-400/40">R</kbd>
+            <span>重設</span>
+            <span className="mx-1">·</span>
+            <kbd className="px-1.5 py-0.5 rounded border border-slate-400/40">N</kbd>
+            <span>跳過</span>
+          </div>
+        </header>
+
+        <main className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Center Panel */}
+          <section className="lg:col-span-2">
+            {/* Mode Tabs */}
+            <div className="inline-flex rounded-2xl bg-slate-200/70 dark:bg-slate-800/60 p-1">
+              {[MODE.FOCUS, MODE.SHORT, MODE.LONG].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => switchMode(m)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
+                    state.mode === m
+                      ? "bg-white dark:bg-slate-700 shadow"
+                      : "hover:bg-white/70 dark:hover:bg-slate-700/50"
+                  }`}
+                >
+                  {labelOf(m)}
+                </button>
+              ))}
+            </div>
+
+            {/* Timer Card */}
+            <div className="mt-4 rounded-3xl p-6 sm:p-8 bg-white/80 dark:bg-slate-800/80 shadow-xl ring-1 ring-black/5">
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <svg width={(radius + stroke) * 2} height={(radius + stroke) * 2} className="block">
+                    <defs>
+                      <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#22d3ee" />
+                        <stop offset="100%" stopColor="#a78bfa" />
+                      </linearGradient>
+                    </defs>
+                    <circle
+                      cx={radius + stroke}
+                      cy={radius + stroke}
+                      r={radius}
+                      fill="none"
+                      stroke="currentColor"
+                      className="opacity-10"
+                      strokeWidth={stroke}
+                    />
+                    <circle
+                      cx={radius + stroke}
+                      cy={radius + stroke}
+                      r={radius}
+                      fill="none"
+                      stroke="url(#grad)"
+                      strokeLinecap="round"
+                      strokeWidth={stroke}
+                      strokeDasharray={`${dash} ${C}`}
+                      transform={`rotate(-90 ${(radius + stroke)} ${(radius + stroke)})`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 grid place-items-center">
+                    <div className="text-center">
+                      <div className="text-[56px] sm:text-7xl font-bold tabular-nums leading-none">
+                        {formatTime(state.remaining)}
+                      </div>
+                      <div className="mt-2 text-sm opacity-70">
+                        目標：{Math.round(totalSecondsForMode / 60)} 分鐘 · 完成 {state.completedFocus} 次專注
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <PrimaryButton onClick={startPause}>
+                    {state.isRunning ? "暫停" : "開始"}
+                  </PrimaryButton>
+                  <GhostButton onClick={reset}>重設</GhostButton>
+                  <GhostButton onClick={skip}>跳過</GhostButton>
+                </div>
+
+                {/* Task input */}
+                <div className="mt-6 w-full max-w-md">
+                  <label className="block text-sm mb-1 opacity-80">當前任務 / Task</label>
+                  <input
+                    value={state.task}
+                    onChange={(e) => setState(s => ({ ...s, task: e.target.value }))}
+                    placeholder="例如：寫報告、處理電郵、3D建模…"
+                    className="w-full rounded-xl border border-slate-300/60 dark:border-slate-600/60 bg-white/70 dark:bg-slate-900/40 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Settings Panel */}
+          <aside className="lg:col-span-1">
+            <div className="rounded-3xl p-6 bg-white/80 dark:bg-slate-800/80 shadow-xl ring-1 ring-black/5">
+              <h2 className="text-lg font-semibold">設定 Settings</h2>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <LabeledNumber label="專注 (分鐘)" value={settings.focusMin} min={1} max={180}
+                  onChange={(v) => setSettings(s => ({ ...s, focusMin: v }))} />
+                <LabeledNumber label="短休 (分鐘)" value={settings.shortMin} min={1} max={60}
+                  onChange={(v) => setSettings(s => ({ ...s, shortMin: v }))} />
+                <LabeledNumber label="長休 (分鐘)" value={settings.longMin} min={5} max={180}
+                  onChange={(v) => setSettings(s => ({ ...s, longMin: v }))} />
+                <LabeledNumber label="長休前循環" value={settings.cyclesBeforeLong} min={2} max={12}
+                  onChange={(v) => setSettings(s => ({ ...s, cyclesBeforeLong: v }))} />
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <ToggleRow
+                  label="自動開始休息"
+                  checked={settings.autoStartBreaks}
+                  onChange={(v) => setSettings(s => ({ ...s, autoStartBreaks: v }))}
+                />
+                <ToggleRow
+                  label="自動開始專注"
+                  checked={settings.autoStartFocus}
+                  onChange={(v) => setSettings(s => ({ ...s, autoStartFocus: v }))}
+                />
+                <RangeRow
+                  label={`提示音量 (${Math.round(settings.volume * 100)}%)`}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={settings.volume}
+                  onChange={(v) => setSettings(s => ({ ...s, volume: v }))}
+                />
+                <ToggleRow
+                  label="桌面通知"
+                  checked={settings.notifications}
+                  onChange={async (v) => {
+                    if (v && "Notification" in window) {
+                      const perm = await Notification.requestPermission();
+                      setSettings(s => ({ ...s, notifications: perm === "granted" }));
+                    } else {
+                      setSettings(s => ({ ...s, notifications: false }));
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="mt-6 text-xs opacity-70 leading-relaxed">
+                快捷鍵：Space 開始/暫停 · R 重設 · N 跳過 · 1/2/3 切換模式 · +/- 調整音量<br />
+                設定將自動保存於本機。若頁籤靜音可能導致提示音無法播放。
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="mt-6 rounded-3xl p-6 bg-white/60 dark:bg-slate-800/60 shadow ring-1 ring-black/5">
+              <h3 className="font-semibold">今日統計</h3>
+              <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                <StatItem label="完成專注" value={state.completedFocus} />
+                <StatItem label="循環進度" value={`${state.cycle}/${settings.cyclesBeforeLong}`} />
+                <StatItem label="模式" value={labelOf(state.mode)} />
+              </div>
+            </div>
+          </aside>
+        </main>
+
+        <footer className="mt-10 text-center text-xs opacity-60">
+          Made with ❤ · 支援深色模式 · by AIO / ChatGPT
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function PrimaryButton({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-400 text-slate-900 font-semibold shadow hover:brightness-110 active:brightness-95 transition"
+    >
+      {children}
+    </button>
+  );
+}
+
+function GhostButton({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-4 py-2 rounded-2xl border border-slate-300/60 dark:border-slate-600/60 hover:bg-slate-100/70 dark:hover:bg-slate-700/40 transition"
+    >
+      {children}
+    </button>
+  );
+}
+
+function LabeledNumber({ label, value, min = 0, max = 999, onChange }) {
+  return (
+    <label className="text-sm">
+      <div className="mb-1 opacity-80">{label}</div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onChange(clamp(value - 1, min, max))}
+          className="w-8 h-8 rounded-xl border border-slate-300/60 dark:border-slate-600/60 grid place-items-center select-none"
+          aria-label="decrease"
+        >−</button>
+        <input
+          type="number"
+          className="w-full rounded-xl border border-slate-300/60 dark:border-slate-600/60 bg-white/70 dark:bg-slate-900/40 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400 text-center"
+          value={value}
+          min={min}
+          max={max}
+          onChange={(e) => onChange(clamp(parseInt(e.target.value || "0", 10), min, max))}
+        />
+        <button
+          onClick={() => onChange(clamp(value + 1, min, max))}
+          className="w-8 h-8 rounded-xl border border-slate-300/60 dark:border-slate-600/60 grid place-items-center select-none"
+          aria-label="increase"
+        >+</button>
+      </div>
+    </label>
+  );
+}
+
+function ToggleRow({ label, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-sm">{label}</span>
+      <button
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${checked ? "bg-cyan-400" : "bg-slate-400/60"}`}
+      >
+        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${checked ? "translate-x-5" : "translate-x-1"}`} />
+      </button>
+    </div>
+  );
+}
+
+function RangeRow({ label, min, max, step, value, onChange }) {
+  return (
+    <label className="block text-sm py-1.5">
+      <div className="mb-1 opacity-80">{label}</div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-cyan-400"
+      />
+    </label>
+  );
+}
+
+function StatItem({ label, value }) {
+  return (
+    <div className="rounded-2xl p-3 bg-slate-100 dark:bg-slate-900/40">
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs opacity-70">{label}</div>
+    </div>
+  );
+}
