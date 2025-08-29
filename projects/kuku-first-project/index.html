@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>番茄鐘 Pomodoro</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    :root{
+      --bg: #f7f7fb;
+      --panel: #ffffff;
+      --text: #1f2328;
+      --muted:#6b7280;
+      --accent:#ff4d4f;
+      --accent-2:#10b981;
+      --ring:#e5e7eb;
+      --btn:#111827;
+      --btn-text:#fff;
+      --shadow:0 6px 20px rgba(0,0,0,.08);
+      --radius:14px;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg:#0b0e14;
+        --panel:#131826;
+        --text:#e6e6eb;
+        --muted:#9aa4b2;
+        --accent:#ff6466;
+        --accent-2:#34d399;
+        --ring:#263042;
+        --btn:#e5e7eb;
+        --btn-text:#0b0e14;
+        --shadow:0 8px 30px rgba(0,0,0,.35);
+      }
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font:16px/1.5 ui-sans-serif, -apple-system, Segoe UI, Roboto, Noto Sans TC, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background:var(--bg);
+      color:var(--text);
+      display:flex; align-items:center; justify-content:center;
+      padding:24px;
+    }
+    .app{
+      width:min(920px, 100%);
+      display:grid;
+      gap:16px;
+      grid-template-columns: 1fr;
+    }
+    header{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px;
+    }
+    .title{font-weight:800; letter-spacing:.3px; font-size:22px}
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    .panel{
+      background:var(--panel);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:18px;
+    }
+    .timer{
+      display:grid; grid-template-columns: 220px 1fr; gap:18px;
+    }
+    @media (max-width:740px){
+      .timer{grid-template-columns: 1fr}
+    }
+    .ring-wrap{
+      position:relative;
+      width:100%; aspect-ratio:1/1; max-width:260px; margin-inline:auto;
+      display:grid; place-items:center;
+    }
+    .ring-wrap svg{transform:rotate(-90deg)}
+    .time{
+      position:absolute; inset:0; display:grid; place-items:center; text-align:center;
+    }
+    .time .mmss{font-size:44px; font-weight:800; letter-spacing:1px}
+    .time .label{font-size:14px; color:var(--muted); margin-top:6px}
+    .controls button{
+      border:0; padding:12px 16px; border-radius:12px; font-weight:700; cursor:pointer;
+      background:var(--btn); color:var(--btn-text); box-shadow:var(--shadow);
+    }
+    .ghost{
+      background:transparent; color:var(--text); border:1px solid var(--ring);
+    }
+    .controls{display:flex; gap:10px; flex-wrap:wrap}
+    .segments{display:flex; gap:8px; flex-wrap:wrap}
+    .chip{
+      border:1px solid var(--ring); padding:8px 12px; border-radius:999px; cursor:pointer; user-select:none;
+      font-weight:700;
+    }
+    .chip.active{background:var(--text); color:var(--btn-text); border-color:transparent}
+    .opts{display:grid; grid-template-columns: repeat(3, minmax(140px,1fr)); gap:10px}
+    @media (max-width:740px){ .opts{grid-template-columns: 1fr 1fr} }
+    .opt{
+      display:grid; gap:6px; font-size:14px;
+    }
+    .opt input[type="number"]{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--ring); background:transparent; color:var(--text);
+    }
+    .opt .sub{color:var(--muted); font-size:12px}
+    .tog{display:flex; align-items:center; gap:10px}
+    .tog input{width:36px; height:22px}
+    footer{
+      color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    }
+    .badge{font-weight:800}
+    .split{display:grid; gap:16px}
+    .hint{color:var(--muted); font-size:13px}
+    .pill{
+      padding:4px 8px; border-radius:8px; border:1px solid var(--ring);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="row">
+        <div class="title">🍅 番茄鐘</div>
+        <span class="pill" id="cycleInfo" title="完成 4 次專注後進長休">循環：0 / 4</span>
+      </div>
+      <div class="row">
+        <button id="themeBtn" class="ghost" aria-label="切換明暗主題">🌓 主題</button>
+        <button id="resetAll" class="ghost" aria-label="重設設定">↺ 重設</button>
+      </div>
+    </header>
+
+    <section class="panel timer">
+      <div class="ring-wrap">
+        <svg width="100%" height="100%" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--ring)" stroke-width="8"/>
+          <circle id="progress" cx="60" cy="60" r="54" fill="none" stroke="var(--accent)" stroke-linecap="round" stroke-width="8" stroke-dasharray="339.292" stroke-dashoffset="339.292"/>
+        </svg>
+        <div class="time" aria-live="polite">
+          <div class="mmss" id="mmss">25:00</div>
+          <div class="label" id="modeLabel">專注時間</div>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="segments" role="tablist" aria-label="模式">
+          <div class="chip active" data-mode="focus" role="tab" aria-selected="true">專注</div>
+          <div class="chip" data-mode="short" role="tab" aria-selected="false">短休</div>
+          <div class="chip" data-mode="long" role="tab" aria-selected="false">長休</div>
+        </div>
+
+        <div class="controls">
+          <button id="startPause" aria-label="開始或暫停">▶︎ 開始</button>
+          <button id="skip" class="ghost" aria-label="跳到下一階段">⏭ 跳過</button>
+          <button id="reset" class="ghost" aria-label="重置此階段">⟲ 重置</button>
+        </div>
+
+        <div class="opts">
+          <div class="opt">
+            <label>專注（分鐘）</label>
+            <input id="focusMin" type="number" min="1" max="180" value="25" />
+            <div class="sub">預設 25 分鐘</div>
+          </div>
+          <div class="opt">
+            <label>短休（分鐘）</label>
+            <input id="shortMin" type="number" min="1" max="60" value="5" />
+            <div class="sub">預設 5 分鐘</div>
+          </div>
+          <div class="opt">
+            <label>長休（分鐘）</label>
+            <input id="longMin" type="number" min="1" max="120" value="15" />
+            <div class="sub">預設 15 分鐘</div>
+          </div>
+          <div class="opt">
+            <label>每幾次專注進長休</label>
+            <input id="roundsToLong" type="number" min="1" max="12" value="4" />
+            <div class="sub">預設 4 次</div>
+          </div>
+          <div class="opt tog">
+            <input id="autoNext" type="checkbox" />
+            <label for="autoNext">自動開始下一階段</label>
+          </div>
+          <div class="opt tog">
+            <input id="sound" type="checkbox" checked />
+            <label for="sound">提示音效</label>
+          </div>
+          <div class="opt tog">
+            <input id="notify" type="checkbox" />
+            <label for="notify">桌面通知</label>
+          </div>
+        </div>
+
+        <div class="hint">
+          快捷鍵：<b>空白鍵</b> 開始/暫停、<b>R</b> 重置、<b>N</b> 下一階段、<b>1/2/3</b> 切換模式。
+        </div>
+      </div>
+    </section>
+
+    <footer class="panel">
+      <div>狀態：<span class="badge" id="status">待機</span></div>
+      <div>⌛ 如果切換分頁，標題會顯示倒數；支援離時計時與誤差校正。</div>
+    </footer>
+  </div>
+
+  <script>
+    ;(()=>{
+      // ---------- State ----------
+      const $ = (q)=>document.querySelector(q);
+      const $$ = (q)=>document.querySelectorAll(q);
+      const el = {
+        mmss: $('#mmss'),
+        modeLabel: $('#modeLabel'),
+        progress: $('#progress'),
+        startPause: $('#startPause'),
+        skip: $('#skip'),
+        reset: $('#reset'),
+        chips: $$('.chip'),
+        cycleInfo: $('#cycleInfo'),
+        status: $('#status'),
+        inputs: {
+          focus: $('#focusMin'),
+          short: $('#shortMin'),
+          long: $('#longMin'),
+          roundsToLong: $('#roundsToLong'),
+          autoNext: $('#autoNext'),
+          sound: $('#sound'),
+          notify: $('#notify'),
+        },
+        themeBtn: $('#themeBtn'),
+        resetAll: $('#resetAll'),
+      };
+
+      const state = {
+        mode: 'focus', // 'focus' | 'short' | 'long'
+        running: false,
+        startAt: 0, // ms timestamp when started
+        endAt: 0,   // ms timestamp when should end
+        remaining: 0, // ms remaining (used when pausing)
+        intervalId: null,
+        completedFocus: 0, // number of completed focus sessions in this cycle
+      };
+
+      const CIRC = 2 * Math.PI * 54; // r=54 -> 339.292...
+      el.progress.setAttribute('stroke-dasharray', String(CIRC));
+
+      // ---------- Persistence ----------
+      const LS_KEY = 'pomodoro.settings.v1';
+      function loadSettings(){
+        try{
+          const raw = localStorage.getItem(LS_KEY);
+          if(!raw) return;
+          const data = JSON.parse(raw);
+          for(const k of ['focus','short','long']){
+            if(typeof data[k]==='number') el.inputs[k].value = data[k];
+          }
+          if(typeof data.roundsToLong==='number') el.inputs.roundsToLong.value = data.roundsToLong;
+          el.inputs.autoNext.checked = !!data.autoNext;
+          el.inputs.sound.checked = !!data.sound ?? true;
+          el.inputs.notify.checked = !!data.notify;
+          if(data.theme) setTheme(data.theme, false);
+        }catch{}
+      }
+      function saveSettings(){
+        const data = {
+          focus: +el.inputs.focus.value,
+          short: +el.inputs.short.value,
+          long: +el.inputs.long.value,
+          roundsToLong: +el.inputs.roundsToLong.value,
+          autoNext: el.inputs.autoNext.checked,
+          sound: el.inputs.sound.checked,
+          notify: el.inputs.notify.checked,
+          theme: document.documentElement.dataset.theme || null,
+        };
+        localStorage.setItem(LS_KEY, JSON.stringify(data));
+      }
+
+      // ---------- Helpers ----------
+      function minsToMs(m){ return Math.max(1, Math.min(600, m)) * 60 * 1000 }
+      function fmt(t){
+        t = Math.max(0, Math.round(t/1000));
+        const m = Math.floor(t/60);
+        const s = t%60;
+        return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      }
+      function setLabel(){
+        const map = {focus:'專注時間', short:'短暫休息', long:'長時間休息'};
+        el.modeLabel.textContent = map[state.mode];
+      }
+      function setTitle(){
+        const emoji = state.mode==='focus' ? '🍅' : (state.mode==='short' ? '☕️' : '🌿');
+        const left = fmt(getRemaining());
+        document.title = `${left} ${emoji} | 番茄鐘`;
+      }
+      function getDurationMs(mode=state.mode){
+        const map = {
+          focus: minsToMs(+el.inputs.focus.value),
+          short: minsToMs(+el.inputs.short.value),
+          long: minsToMs(+el.inputs.long.value),
+        };
+        return map[mode];
+      }
+      function getRemaining(){
+        if(!state.running) return state.remaining || getDurationMs();
+        return Math.max(0, state.endAt - Date.now());
+      }
+      function updateProgress(){
+        const total = getDurationMs();
+        const left = getRemaining();
+        const done = 1 - left/total;
+        el.progress.style.strokeDashoffset = String(CIRC * (1 - done));
+        el.mmss.textContent = fmt(left);
+        setTitle();
+      }
+      function beep(){
+        if(!el.inputs.sound.checked) return;
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine'; o.frequency.setValueAtTime(880, ctx.currentTime);
+        g.gain.setValueAtTime(0.001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.25);
+        o.start(); o.stop(ctx.currentTime+0.28);
+      }
+      function notify(text){
+        if(!el.inputs.notify.checked) return;
+        if(Notification.permission === 'granted'){
+          new Notification(text);
+        }else if(Notification.permission !== 'denied'){
+          Notification.requestPermission().then(p=>{
+            if(p==='granted') new Notification(text);
+          });
+        }
+      }
+      function setStatus(s){ el.status.textContent = s }
+
+      // Theme
+      function setTheme(t, persist=true){
+        document.documentElement.dataset.theme = t;
+        if(t==='dark'){
+          document.documentElement.style.colorScheme = 'dark';
+        }else{
+          document.documentElement.style.colorScheme = 'light';
+        }
+        if(persist) saveSettings();
+      }
+      function toggleTheme(){
+        const cur = document.documentElement.dataset.theme || (
+          matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        );
+        setTheme(cur==='dark' ? 'light' : 'dark');
+      }
+
+      // ---------- Core timer with drift correction ----------
+      function startTimer(){
+        if(state.running) return;
+        const now = Date.now();
+        const dur = state.remaining || getDurationMs();
+        state.startAt = now;
+        state.endAt = now + dur;
+        state.running = true;
+        el.startPause.textContent = '⏸ 暫停';
+        setStatus('倒數中');
+        tick(); // immediate update
+        state.intervalId = setInterval(tick, 250);
+      }
+      function pauseTimer(){
+        if(!state.running) return;
+        state.running = false;
+        state.remaining = getRemaining();
+        clearInterval(state.intervalId);
+        el.startPause.textContent = '▶︎ 繼續';
+        setStatus('已暫停');
+        updateProgress();
+      }
+      function resetTimer(){
+        clearInterval(state.intervalId);
+        state.running = false;
+        state.remaining = getDurationMs();
+        el.startPause.textContent = '▶︎ 開始';
+        setStatus('待機');
+        updateProgress();
+      }
+      function completePhase(){
+        // count focus completion for cycles
+        if(state.mode==='focus'){
+          state.completedFocus++;
+          const total = +el.inputs.roundsToLong.value || 4;
+          if(state.completedFocus >= total){
+            state.completedFocus = 0;
+            switchMode('long', false);
+          }else{
+            switchMode('short', false);
+          }
+        }else{
+          switchMode('focus', false);
+        }
+        el.cycleInfo.textContent = `循環：${state.completedFocus} / ${+el.inputs.roundsToLong.value || 4}`;
+        beep();
+        notify(`時間到：${el.modeLabel.textContent}`);
+        if(el.inputs.autoNext.checked){
+          resetTimer();
+          startTimer();
+        }else{
+          resetTimer();
+        }
+      }
+      function switchMode(mode, fromUser=true){
+        state.mode = mode;
+        el.chips.forEach(c=>{
+          const active = c.dataset.mode===mode;
+          c.classList.toggle('active', active);
+          c.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        setLabel();
+        document.documentElement.style.setProperty('--accent',
+          mode==='focus' ? getComputedStyle(document.documentElement).getPropertyValue('--accent')
+          : mode==='short' ? 'var(--accent-2)' : 'var(--accent-2)'
+        );
+        state.remaining = getDurationMs(mode);
+        // If user manually switches, don't auto-advance cycle counts
+        if(fromUser) setStatus('待機');
+        updateProgress();
+      }
+
+      function tick(){
+        const left = getRemaining();
+        if(left <= 0){
+          clearInterval(state.intervalId);
+          state.running = false;
+          el.startPause.textContent = '▶︎ 開始';
+          setStatus('完成一階段');
+          updateProgress();
+          completePhase();
+          return;
+        }
+        updateProgress();
+      }
+
+      // ---------- Wiring ----------
+      el.startPause.addEventListener('click', ()=>{
+        state.running ? pauseTimer() : startTimer();
+      });
+      el.reset.addEventListener('click', resetTimer);
+      el.skip.addEventListener('click', ()=>{
+        completePhase();
+      });
+      el.chips.forEach(ch=>{
+        ch.addEventListener('click', ()=>{
+          switchMode(ch.dataset.mode);
+        });
+      });
+      Object.values(el.inputs).forEach(inp=>{
+        inp.addEventListener('change', ()=>{
+          saveSettings();
+          // If editing while idle, refresh remaining to new duration
+          if(!state.running){
+            state.remaining = getDurationMs();
+            updateProgress();
+          }
+        });
+      });
+      el.inputs.notify.addEventListener('change', ()=>{
+        if(el.inputs.notify.checked && 'Notification' in window){
+          Notification.requestPermission();
+        }
+      });
+      document.addEventListener('visibilitychange', setTitle);
+
+      document.addEventListener('keydown', (e)=>{
+        if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA')) return;
+        if(e.code==='Space'){ e.preventDefault(); state.running ? pauseTimer() : startTimer(); }
+        else if(e.key==='r' || e.key==='R'){ resetTimer(); }
+        else if(e.key==='n' || e.key==='N'){ completePhase(); }
+        else if(e.key==='1'){ switchMode('focus'); }
+        else if(e.key==='2'){ switchMode('short'); }
+        else if(e.key==='3'){ switchMode('long'); }
+      });
+
+      function init(){
+        loadSettings();
+        switchMode('focus');
+        resetTimer();
+        if('Notification' in window && Notification.permission==='granted' && el.inputs.notify.checked){
+          // ready
+        }
+        el.themeBtn.addEventListener('click', toggleTheme);
+        el.resetAll.addEventListener('click', ()=>{
+          localStorage.removeItem(LS_KEY);
+          location.reload();
+        });
+      }
+      init();
+    })();
+  </script>
+</body>
+</html>
