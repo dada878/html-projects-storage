@@ -1,0 +1,460 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+// 單檔 React 番茄鐘（支援：工作/短休/長休、可調時間、循環、自動開始、桌面通知、快捷鍵、待辦清單、統計、LocalStorage 持久化、深色模式、音效）
+// Tailwind 已由平台提供，直接使用 className。
+
+// ===== 小工具 =====
+const pad = (n) => n.toString().padStart(2, "0");
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const LS_KEY = {
+  settings: "pomodoro.settings.v1",
+  stats: "pomodoro.stats.v1",
+  tasks: "pomodoro.tasks.v1",
+};
+
+const defaultSettings = {
+  workMin: 25,
+  shortMin: 5,
+  longMin: 15,
+  cyclesBeforeLong: 4,
+  autoStartNext: false,
+  tickSound: false,
+  endSound: true,
+  darkMode: true,
+};
+
+const Mode = {
+  WORK: "WORK",
+  SHORT: "SHORT",
+  LONG: "LONG",
+};
+
+// 簡易蜂鳴音：避免外部音檔
+function useBeep() {
+  const ctxRef = useRef(null);
+  const ensureCtx = () => {
+    if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    return ctxRef.current;
+  };
+  const beep = (freq = 880, ms = 180) => {
+    try {
+      const ctx = ensureCtx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      o.connect(g);
+      g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + ms / 1000);
+      o.stop(ctx.currentTime + ms / 1000 + 0.02);
+    } catch {}
+  };
+  return beep;
+}
+
+// 桌面通知
+function notify(title, body) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+}
+
+// ===== 主要元件 =====
+export default function App() {
+  // 設定、狀態
+  const [settings, setSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY.settings));
+      return { ...defaultSettings, ...(saved || {}) };
+    } catch {
+      return defaultSettings;
+    }
+  });
+
+  const [mode, setMode] = useState(Mode.WORK);
+  const [secondsLeft, setSecondsLeft] = useState(settings.workMin * 60);
+  const [running, setRunning] = useState(false);
+  const [cycleCount, setCycleCount] = useState(0); // 已完成的 WORK 次數 (用於長休判斷)
+
+  const [tasks, setTasks] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(LS_KEY.tasks)) || [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [stats, setStats] = useState(() => {
+    try {
+      return (
+        JSON.parse(localStorage.getItem(LS_KEY.stats)) || {
+          completedWork: 0, // 完成的工作節數
+          totalFocusMin: 0, // 專注分鐘數
+          sessions: [], // {ts, mode, minutes}
+        }
+      );
+    } catch {
+      return { completedWork: 0, totalFocusMin: 0, sessions: [] };
+    }
+  });
+
+  const beep = useBeep();
+  const intervalRef = useRef(null);
+
+  // 持久化設定/任務/統計
+  useEffect(() => localStorage.setItem(LS_KEY.settings, JSON.stringify(settings)), [settings]);
+  useEffect(() => localStorage.setItem(LS_KEY.tasks, JSON.stringify(tasks)), [tasks]);
+  useEffect(() => localStorage.setItem(LS_KEY.stats, JSON.stringify(stats)), [stats]);
+
+  // 深色模式
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", !!settings.darkMode);
+  }, [settings.darkMode]);
+
+  // 依模式更新預設秒數
+  const modeSeconds = useMemo(() => {
+    const m = mode === Mode.WORK ? settings.workMin : mode === Mode.SHORT ? settings.shortMin : settings.longMin;
+    return m * 60;
+  }, [mode, settings.workMin, settings.shortMin, settings.longMin]);
+
+  useEffect(() => {
+    setSecondsLeft(modeSeconds);
+  }, [modeSeconds]);
+
+  // 計時器核心
+  useEffect(() => {
+    if (!running) return;
+    clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        const next = s - 1;
+        if (settings.tickSound && next >= 0) beep(660, 25);
+        if (next <= 0) {
+          clearInterval(intervalRef.current);
+          handleSessionEnd();
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(intervalRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, settings.tickSound]);
+
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+  const total = modeSeconds;
+  const progress = 1 - secondsLeft / total;
+
+  // 切換模式
+  function switchMode(nextMode) {
+    setMode(nextMode);
+    setRunning(false);
+  }
+
+  // 結束一個 Session 的處理
+  function handleSessionEnd() {
+    if (settings.endSound) {
+      beep(880, 180);
+      setTimeout(() => beep(660, 180), 180);
+    }
+    notify(
+      mode === Mode.WORK ? "專注結束" : "休息結束",
+      mode === Mode.WORK ? "該休息一下囉！" : "回到專注時間！"
+    );
+
+    // 更新統計
+    const spentMin = Math.round(total / 60);
+    setStats((st) => ({
+      ...st,
+      completedWork: st.completedWork + (mode === Mode.WORK ? 1 : 0),
+      totalFocusMin: st.totalFocusMin + (mode === Mode.WORK ? spentMin : 0),
+      sessions: [...st.sessions, { ts: Date.now(), mode, minutes: spentMin }].slice(-400),
+    }));
+
+    // 模式流轉
+    if (mode === Mode.WORK) {
+      const nextCycle = cycleCount + 1;
+      setCycleCount(nextCycle);
+      const goLong = nextCycle % settings.cyclesBeforeLong === 0;
+      setMode(goLong ? Mode.LONG : Mode.SHORT);
+      setSecondsLeft((goLong ? settings.longMin : settings.shortMin) * 60);
+    } else {
+      setMode(Mode.WORK);
+      setSecondsLeft(settings.workMin * 60);
+    }
+
+    // 自動開始
+    if (settings.autoStartNext) {
+      setRunning(true);
+    } else {
+      setRunning(false);
+    }
+  }
+
+  function startPause() {
+    setRunning((r) => !r);
+  }
+  function resetTimer() {
+    setRunning(false);
+    setSecondsLeft(modeSeconds);
+  }
+  function skipSession() {
+    setRunning(false);
+    handleSessionEnd();
+  }
+
+  // 快捷鍵
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.code === "Space") { e.preventDefault(); startPause(); }
+      if (e.key.toLowerCase() === "r") resetTimer();
+      if (e.key.toLowerCase() === "n") skipSession();
+      if (e.key.toLowerCase() === "w") switchMode(Mode.WORK);
+      if (e.key.toLowerCase() === "s") switchMode(Mode.SHORT);
+      if (e.key.toLowerCase() === "l") switchMode(Mode.LONG);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  // 任務清單
+  function addTask(title) {
+    if (!title.trim()) return;
+    setTasks((t) => [...t, { id: crypto.randomUUID(), title: title.trim(), done: false }]);
+  }
+  function toggleTask(id) {
+    setTasks((t) => t.map((x) => (x.id === id ? { ...x, done: !x.done } : x)));
+  }
+  function removeTask(id) {
+    setTasks((t) => t.filter((x) => x.id !== id));
+  }
+
+  // 進度環路徑
+  const radius = 120;
+  const circ = 2 * Math.PI * radius;
+  const dash = Math.max(0.0001, circ * progress);
+
+  return (
+    <div className="min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-50 transition-colors">
+      <div className="max-w-5xl mx-auto p-4 sm:p-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">番茄鐘（Pomodoro）</h1>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={() => setSettings((s) => ({ ...s, darkMode: !s.darkMode }))}
+              title="深色模式"
+            >
+              {settings.darkMode ? "☾ 暗" : "☀ 亮"}
+            </button>
+          </div>
+        </div>
+
+        {/* 主體卡片 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 計時器卡 */}
+          <div className="lg:col-span-2 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-950/60 p-4 sm:p-6 shadow-sm">
+            {/* 模式切換 */}
+            <div className="flex items-center gap-2 mb-4">
+              <ModeButton label="工作" active={mode === Mode.WORK} onClick={() => switchMode(Mode.WORK)} />
+              <ModeButton label="短休" active={mode === Mode.SHORT} onClick={() => switchMode(Mode.SHORT)} />
+              <ModeButton label="長休" active={mode === Mode.LONG} onClick={() => switchMode(Mode.LONG)} />
+              <div className="ml-auto text-sm text-neutral-500 dark:text-neutral-400">已完成工作：{stats.completedWork} 次</div>
+            </div>
+
+            {/* 進度圓環 + 時間 */}
+            <div className="flex items-center justify-center my-4">
+              <div className="relative">
+                <svg width={300} height={300} viewBox="0 0 300 300">
+                  <circle cx={150} cy={150} r={radius} className="fill-none stroke-neutral-200 dark:stroke-neutral-800" strokeWidth="14" />
+                  <circle
+                    cx={150}
+                    cy={150}
+                    r={radius}
+                    className="fill-none stroke-emerald-500"
+                    strokeWidth="14"
+                    strokeDasharray={`${dash} ${circ}`}
+                    strokeLinecap="round"
+                    transform="rotate(-90 150 150)"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-6xl font-bold tabular-nums">{pad(minutes)}:{pad(seconds)}</div>
+                  <div className="text-sm text-neutral-500 mt-2">
+                    {mode === Mode.WORK ? "專注中" : mode === Mode.SHORT ? "短暫休息" : "長時間休息"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 控制按鈕 */}
+            <div className="flex items-center justify-center gap-3 mt-2">
+              <PrimaryButton onClick={startPause}>{running ? "暫停 (Space)" : "開始 (Space)"}</PrimaryButton>
+              <GhostButton onClick={resetTimer}>重設 (R)</GhostButton>
+              <GhostButton onClick={skipSession}>跳過/結束 (N)</GhostButton>
+              <GhostButton onClick={() => { Notification.requestPermission?.(); }}>允許通知</GhostButton>
+            </div>
+
+            {/* 設定 */}
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <NumberField label="工作(分)" value={settings.workMin} onChange={(v)=> setSettings(s=>({...s, workMin: clamp(v, 1, 180)}))} />
+              <NumberField label="短休(分)" value={settings.shortMin} onChange={(v)=> setSettings(s=>({...s, shortMin: clamp(v, 1, 60)}))} />
+              <NumberField label="長休(分)" value={settings.longMin} onChange={(v)=> setSettings(s=>({...s, longMin: clamp(v, 5, 180)}))} />
+              <NumberField label="幾輪進長休" value={settings.cyclesBeforeLong} onChange={(v)=> setSettings(s=>({...s, cyclesBeforeLong: clamp(v, 2, 12)}))} />
+              <ToggleField label="結束音效" checked={settings.endSound} onChange={(v)=> setSettings(s=>({...s, endSound: v}))} />
+              <ToggleField label="每秒滴答音" checked={settings.tickSound} onChange={(v)=> setSettings(s=>({...s, tickSound: v}))} />
+              <ToggleField label="自動開始下一段" checked={settings.autoStartNext} onChange={(v)=> setSettings(s=>({...s, autoStartNext: v}))} />
+            </div>
+
+            <div className="mt-4 text-xs text-neutral-500">
+              快捷鍵：Space 開始/暫停、R 重設、N 跳過、W 工作、S 短休、L 長休。
+            </div>
+          </div>
+
+          {/* 待辦 + 統計卡 */}
+          <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-950/60 p-4 sm:p-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-3">待辦清單</h2>
+            <TaskInput onAdd={addTask} />
+            <ul className="space-y-2 mt-3">
+              {tasks.map((t) => (
+                <li key={t.id} className="flex items-center gap-2 p-2 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/50">
+                  <input type="checkbox" className="size-4" checked={t.done} onChange={() => toggleTask(t.id)} />
+                  <span className={`flex-1 ${t.done ? "line-through opacity-60" : ""}`}>{t.title}</span>
+                  <button className="text-xs px-2 py-1 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700" onClick={() => removeTask(t.id)}>刪除</button>
+                </li>
+              ))}
+              {tasks.length === 0 && (
+                <li className="text-sm text-neutral-500">還沒有待辦項目，先設定 1–3 個當天重點吧！</li>
+              )}
+            </ul>
+
+            <h2 className="text-lg font-semibold mt-6 mb-2">統計</h2>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <StatCard label="完成工作段" value={stats.completedWork} />
+              <StatCard label="累計專注(分)" value={stats.totalFocusMin} />
+              <StatCard label="本輪次數" value={cycleCount} />
+            </div>
+            <div className="mt-3 text-xs text-neutral-500">
+              小提示：完成一段工作後，會自動記錄在統計中（本地瀏覽器）。
+            </div>
+          </div>
+        </div>
+
+        <FooterNote />
+      </div>
+    </div>
+  );
+}
+
+function ModeButton({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-2 rounded-xl border text-sm transition-colors ${
+        active
+          ? "bg-emerald-500 text-white border-emerald-500"
+          : "border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PrimaryButton({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+    >
+      {children}
+    </button>
+  );
+}
+
+function GhostButton({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-3 py-2 rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+    >
+      {children}
+    </button>
+  );
+}
+
+function NumberField({ label, value, onChange }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-neutral-600 dark:text-neutral-300">{label}</span>
+      <input
+        type="number"
+        className="px-3 py-2 rounded-xl bg-white/80 dark:bg-neutral-900/50 border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value || "0", 10))}
+      />
+    </label>
+  );
+}
+
+function ToggleField({ label, checked, onChange }) {
+  return (
+    <label className="flex items-center justify-between gap-3 text-sm p-2 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/40">
+      <span className="text-neutral-700 dark:text-neutral-300">{label}</span>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`w-12 h-6 rounded-full transition-colors ${checked ? "bg-emerald-500" : "bg-neutral-400"}`}
+      >
+        <span className={`block w-5 h-5 bg-white rounded-full translate-y-0.5 transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}></span>
+      </button>
+    </label>
+  );
+}
+
+function TaskInput({ onAdd }) {
+  const [txt, setTxt] = useState("");
+  return (
+    <div className="flex gap-2">
+      <input
+        value={txt}
+        onChange={(e) => setTxt(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { onAdd(txt); setTxt(""); } }}
+        placeholder="輸入待辦事項，按 Enter 新增"
+        className="flex-1 px-3 py-2 rounded-xl bg-white/80 dark:bg-neutral-900/50 border border-neutral-300 dark:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+      />
+      <button
+        onClick={() => { onAdd(txt); setTxt(""); }}
+        className="px-3 py-2 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
+      >
+        新增
+      </button>
+    </div>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div className="p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-800/40">
+      <div className="text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="text-xs text-neutral-500 mt-1">{label}</div>
+    </div>
+  );
+}
+
+function FooterNote() {
+  return (
+    <div className="mt-8 text-xs text-neutral-500 text-center leading-6">
+      <p>小提醒：若要在背景也收到提醒，請允許瀏覽器「桌面通知」。切換分段時可設定自動開始。</p>
+      <p>鍵盤：Space 開始/暫停、R 重設、N 跳過、W 工作、S 短休、L 長休。</p>
+    </div>
+  );
+}
