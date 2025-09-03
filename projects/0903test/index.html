@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Flip Pomodoro Clock</title>
+<style>
+  :root{
+    --bg:#0f1221;
+    --panel:#161a2f;
+    --accent:#7dd3fc;
+    --text:#e5e7eb;
+    --muted:#94a3b8;
+    --digit-bg:#0b1022;
+    --digit-edge:#0d1228;
+    --success:#34d399;
+    --warn:#f59e0b;
+    --error:#ef4444;
+    --radius:22px;
+    --gap:10px;
+    --flip-duration:0.6s;
+    --clock-size: clamp(260px, 55vw, 560px);
+    --digit-radius: 14px;
+    --digit-shadow: 0 10px 25px rgba(0,0,0,.35);
+  }
+  html,body{height:100%}
+  body{
+    margin:0;background: radial-gradient(1200px 600px at 70% -10%, #1b2250, #0a0d1f 60%), var(--bg);
+    color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+    display:grid;place-items:center;padding:24px;
+  }
+  .app{width:min(100%,980px)}
+  .header{display:flex;flex-wrap:wrap;gap:12px;align-items:end;justify-content:space-between;margin-bottom:16px}
+  .header .stack{display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+  .field{
+    background:var(--panel); padding:12px 14px;border-radius:14px;border:1px solid #202549;display:grid;gap:6px;min-width:180px;
+  }
+  .field label{font-size:12px;color:var(--muted)}
+  .field input{
+    background:#0c1130; border:1px solid #1e2657; color:var(--text);
+    padding:10px 12px;border-radius:10px; font-size:14px; width:100%;
+  }
+  .buttons{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{
+    appearance:none; border:1px solid #21306b; background:#10163a; color:var(--text);
+    padding:12px 16px;border-radius:12px;font-weight:600;cursor:pointer;
+    transition:transform .08s ease, background .2s ease, border-color .2s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.start{border-color:#1c3d33; background:#0f1f1a}
+  .btn.start.running{outline:2px solid #1f6f58; background:#0d2a22}
+  .btn.pause{border-color:#4b2a10; background:#1b130b}
+  .phase{
+    margin:6px 2px 0;color:var(--muted);font-size:14px
+  }
+  .phase .work{color:var(--success);font-weight:700}
+  .phase .break{color:var(--warn);font-weight:700}
+
+  /* CLOCK */
+  .clock{
+    width:var(--clock-size); margin:18px auto 0; display:flex; justify-content:center; gap:clamp(8px,2vw,16px);
+  }
+  .group{display:flex;gap:clamp(6px,1.5vw,12px); align-items:center}
+  .colon{
+    font-size:clamp(28px,8vw,54px); line-height:1; transform:translateY(-6%);
+    color:#90a0ff; text-shadow:0 0 14px rgba(144,160,255,.35);
+  }
+  .digit{
+    position:relative; width:clamp(56px,14vw,112px); height:clamp(76px,18vw,150px);
+    perspective:900px;
+  }
+  .card{
+    position:absolute; inset:0; border-radius:var(--digit-radius);
+    box-shadow: var(--digit-shadow);
+    background: linear-gradient(#121836, #0b1024 50%, #0a0e20 50.1%, #0a0f24);
+    color:#dbeafe; display:grid; place-items:center;
+    font-weight:800; font-variant-numeric: tabular-nums; letter-spacing:1px;
+    border:1px solid var(--digit-edge);
+    overflow:hidden;
+  }
+  .card .value{font-size:clamp(36px,9vw,86px)}
+  .card .top, .card .bottom{
+    position:absolute; left:0; right:0; height:50%; overflow:hidden; display:grid; place-items:center
+  }
+  .card .top{top:0; border-bottom:1px solid #111630}
+  .card .bottom{bottom:0}
+
+  /* FLIP ANIMATION LAYERS */
+  .flip-upper, .flip-lower{
+    position:absolute; left:0; right:0; height:50%; overflow:hidden;
+    backface-visibility:hidden; transform-origin:center bottom;
+    background: linear-gradient(#121836, #0b1024 50%, #0a0e20 50.1%, #0a0f24);
+    border-radius: var(--digit-radius) var(--digit-radius) 0 0;
+    display:grid; place-items:center; color:#dbeafe; border:1px solid var(--digit-edge);
+  }
+  .flip-lower{
+    top:50%; transform-origin:center top; border-radius: 0 0 var(--digit-radius) var(--digit-radius);
+  }
+  .flip-upper .txt, .flip-lower .txt{font-size:clamp(36px,9vw,86px); font-weight:800}
+
+  @keyframes flipDown {
+    0% { transform: rotateX(0deg) }
+    100% { transform: rotateX(-90deg) }
+  }
+  @keyframes flipUp {
+    0% { transform: rotateX(90deg) }
+    100% { transform: rotateX(0deg) }
+  }
+  .animate-upper{ animation: flipDown var(--flip-duration) ease-in forwards }
+  .animate-lower{ animation: flipUp var(--flip-duration) ease-out forwards }
+
+  /* Status bar */
+  .status{
+    margin:16px auto 0; max-width:var(--clock-size); color:var(--muted); font-size:14px
+  }
+  .sr-only{
+    position:absolute !important; width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0
+  }
+
+  /* Small screens */
+  @media (max-width:480px){
+    .field{min-width:unset; flex:1}
+    .header{gap:8px}
+  }
+</style>
+</head>
+<body>
+  <main class="app" role="application" aria-label="翻頁蕃茄鐘">
+    <div class="header">
+      <div class="stack">
+        <div class="field">
+          <label for="workMins">工作時間（分鐘，預設 25）</label>
+          <input id="workMins" type="number" inputmode="numeric" min="1" max="240" step="1" placeholder="25" aria-describedby="workHelp">
+          <small id="workHelp" class="phase">完成後自動進入休息</small>
+        </div>
+        <div class="field">
+          <label for="breakMins">休息時間（分鐘，預設 5）</label>
+          <input id="breakMins" type="number" inputmode="numeric" min="1" max="120" step="1" placeholder="5" aria-describedby="breakHelp">
+          <small id="breakHelp" class="phase">可自行調整</small>
+        </div>
+      </div>
+      <div class="buttons">
+        <button id="startBtn" class="btn start" aria-pressed="false">開始</button>
+        <button id="pauseBtn" class="btn pause">暫停</button>
+      </div>
+    </div>
+
+    <div class="phase" aria-live="polite">
+      模式：<span id="phaseText" class="work">工作</span>
+    </div>
+
+    <!-- Flip Clock -->
+    <section class="clock" aria-live="off" aria-label="倒數計時：分秒">
+      <div class="group" aria-label="分鐘">
+        <div class="digit" data-slot="m10" aria-hidden="true"></div>
+        <div class="digit" data-slot="m1"  aria-hidden="true"></div>
+      </div>
+      <div class="colon" aria-hidden="true">:</div>
+      <div class="group" aria-label="秒鐘">
+        <div class="digit" data-slot="s10" aria-hidden="true"></div>
+        <div class="digit" data-slot="s1"  aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <p id="srLive" class="sr-only" aria-live="polite"></p>
+    <div class="status" id="statusTips">
+      ⌛ 小技巧：編輯分鐘後按「開始」套用。倒數至 00:00 會自動切換 <strong>工作 ↔ 休息</strong>。
+    </div>
+  </main>
+
+<script>
+(function(){
+  // --- Utilities ---
+  const clampInt = (v,min,max, fallback)=> {
+    const n = parseInt(v,10); 
+    if (isNaN(n)) return fallback;
+    return Math.min(Math.max(n,min),max);
+  };
+  const pad2 = n => String(n).padStart(2,'0');
+
+  // --- Elements ---
+  const workInput  = document.getElementById('workMins');
+  const breakInput = document.getElementById('breakMins');
+  const startBtn   = document.getElementById('startBtn');
+  const pauseBtn   = document.getElementById('pauseBtn');
+  const phaseText  = document.getElementById('phaseText');
+  const live = document.getElementById('srLive');
+
+  const slots = {
+    m10: document.querySelector('.digit[data-slot="m10"]'),
+    m1:  document.querySelector('.digit[data-slot="m1"]'),
+    s10: document.querySelector('.digit[data-slot="s10"]'),
+    s1:  document.querySelector('.digit[data-slot="s1"]')
+  };
+
+  // --- State ---
+  let phase = 'work'; // 'work' | 'break'
+  let totalMs = 25*60*1000; // current phase remaining in ms
+  let timer = null;
+  let lastDigits = { m10:null, m1:null, s10:null, s1:null };
+  let running = false;
+
+  // Initialize defaults
+  function init(){
+    workInput.value  = '';
+    breakInput.value = '';
+    setPhase('work', 25*60*1000, true);
+    drawImmediate();
+  }
+
+  function setPhase(next, ms, announce){
+    phase = next;
+    totalMs = ms;
+    phaseText.textContent = phase === 'work' ? '工作' : '休息';
+    phaseText.className = phase === 'work' ? 'work' : 'break';
+    if (announce) speak();
+  }
+
+  function speak(){
+    const {min,sec} = getMinSec(totalMs);
+    live.textContent = `${phase === 'work' ? '工作' : '休息'}，剩餘 ${min} 分 ${sec} 秒`;
+  }
+
+  function getDurationsFromInputs(){
+    const w = clampInt(workInput.value, 1, 240, 25);
+    const b = clampInt(breakInput.value,1, 120, 5);
+    return {workMs: w*60*1000, breakMs: b*60*1000};
+  }
+
+  function start(){
+    // Apply new inputs at start
+    const {workMs, breakMs} = getDurationsFromInputs();
+    const targetMs = (phase === 'work') ? workMs : breakMs;
+    if (!running) {
+      // if currently paused and totalMs > 0, keep remaining; else reset to target
+      if (totalMs <= 0 || totalMs > targetMs) totalMs = targetMs;
+    } else {
+      // already running: ignore
+    }
+    running = true;
+    startBtn.classList.add('running');
+    startBtn.setAttribute('aria-pressed','true');
+
+    if (timer) clearInterval(timer);
+    const startTime = performance.now();
+    let lastTick = startTime;
+
+    timer = setInterval(()=>{
+      const now = performance.now();
+      const dt = now - lastTick;
+      lastTick = now;
+      totalMs = Math.max(0, totalMs - dt);
+      draw();
+      if (totalMs <= 0){
+        // Auto switch phase
+        const {workMs, breakMs} = getDurationsFromInputs();
+        if (phase === 'work') setPhase('break', breakMs, true);
+        else setPhase('work', workMs, true);
+        drawImmediate();
+      }
+    }, 80); // tick ~12.5fps for smoother flips but low CPU
+  }
+
+  function pause(){
+    running = false;
+    startBtn.classList.remove('running');
+    startBtn.setAttribute('aria-pressed','false');
+    if (timer){ clearInterval(timer); timer = null; }
+    speak();
+  }
+
+  function drawImmediate(){
+    const {min,sec} = getMinSec(totalMs);
+    const digits = toDigits(min, sec);
+    for (const k of Object.keys(slots)){
+      renderDigit(slots[k], digits[k], true);
+      lastDigits[k] = digits[k];
+    }
+    speak();
+  }
+
+  function draw(){
+    const {min,sec} = getMinSec(totalMs);
+    const digits = toDigits(min, sec);
+    for (const k of Object.keys(slots)){
+      if (lastDigits[k] !== digits[k]){
+        renderDigit(slots[k], digits[k], false);
+        lastDigits[k] = digits[k];
+      }
+    }
+  }
+
+  function getMinSec(ms){
+    const totalSec = Math.ceil(ms/1000); // ceil so UI shows "00" exactly at 0
+    const min = Math.floor(totalSec/60);
+    const sec = totalSec%60;
+    return {min,sec};
+  }
+
+  function toDigits(min, sec){
+    const m = pad2(min);
+    const s = pad2(sec);
+    return {
+      m10: m[0],
+      m1:  m[1],
+      s10: s[0],
+      s1:  s[1]
+    };
+  }
+
+  // Core flip rendering for one digit slot
+  function renderDigit(slot, newVal, immediate=false){
+    // Build static card if first time
+    if (!slot._built){
+      const base = document.createElement('div');
+      base.className = 'card';
+      base.innerHTML = `
+        <div class="top"><div class="value">0</div></div>
+        <div class="bottom"><div class="value">0</div></div>
+        <div class="value" aria-hidden="true" style="opacity:0;position:absolute">${newVal}</div>
+      `;
+      slot.appendChild(base);
+      slot._built = true;
+    }
+    const top = slot.querySelector('.top .value');
+    const bottom = slot.querySelector('.bottom .value');
+
+    if (immediate){
+      top.textContent = newVal;
+      bottom.textContent = newVal;
+      // no animation
+      return;
+    }
+
+    // Create flip layers
+    const upper = document.createElement('div');
+    upper.className = 'flip-upper animate-upper';
+    upper.innerHTML = `<div class="txt">${top.textContent}</div>`;
+
+    const lower = document.createElement('div');
+    lower.className = 'flip-lower animate-lower';
+    lower.innerHTML = `<div class="txt">${newVal}</div>`;
+
+    // Update static bottom after animation
+    upper.addEventListener('animationend', ()=> {
+      top.textContent = newVal;
+    }, {once:true});
+    lower.addEventListener('animationend', ()=> {
+      bottom.textContent = newVal;
+      // cleanup
+      upper.remove();
+      lower.remove();
+    }, {once:true});
+
+    slot.appendChild(upper);
+    slot.appendChild(lower);
+  }
+
+  // --- Events ---
+  startBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', pause);
+
+  // Input changes while running don't immediately overwrite remaining time,
+  // 但會在下一次自動切換或重新按「開始」時套用。
+  workInput.addEventListener('change', ()=>{
+    const v = clampInt(workInput.value,1,240,25);
+    if (phase==='work' && !running){ totalMs = v*60*1000; drawImmediate(); }
+  });
+  breakInput.addEventListener('change', ()=>{
+    const v = clampInt(breakInput.value,1,120,5);
+    if (phase==='break' && !running){ totalMs = v*60*1000; drawImmediate(); }
+  });
+
+  // Keyboard a11y: Space/Enter on start/pause when focused
+  [startBtn, pauseBtn].forEach(btn=>{
+    btn.addEventListener('keydown', e=>{
+      if (e.key==='Enter' || e.key===' ') { e.preventDefault(); btn.click(); }
+    });
+  });
+
+  // Kickoff
+  init();
+})();
+</script>
+</body>
+</html>
