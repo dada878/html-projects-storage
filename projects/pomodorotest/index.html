@@ -1,0 +1,501 @@
+# Create a single-file Pomodoro timer webpage with modern UI and Chinese labels.
+html = r"""<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>番茄鐘 — 25:00</title>
+  <meta name="theme-color" content="#111827" />
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#111827;
+      --muted:#94a3b8;
+      --text:#e5e7eb;
+      --accent:#60a5fa;
+      --success:#34d399;
+      --danger:#f87171;
+      --ring-bg:#1f2937;
+      --ring:#60a5fa;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:18px;
+    }
+    [data-theme="light"]{
+      --bg:#f6f7fb;
+      --panel:#ffffff;
+      --muted:#64748b;
+      --text:#0f172a;
+      --accent:#2563eb;
+      --success:#059669;
+      --danger:#dc2626;
+      --ring-bg:#e5e7eb;
+      --ring:#2563eb;
+      --shadow:0 8px 24px rgba(2,6,23,.08);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 80% 0%, rgba(96,165,250,.12), transparent 60%),
+                  radial-gradient(1000px 600px at 10% 100%, rgba(52,211,153,.10), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
+    .app{
+      width:min(980px,100%);
+      display:grid;
+      gap:18px;
+      grid-template-columns: 1fr;
+    }
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;
+    }
+    .title{
+      font-weight:700;letter-spacing:.5px;font-size:20px;
+      display:flex;gap:10px;align-items:center;
+    }
+    .title .dot{width:10px;height:10px;border-radius:999px;background:var(--accent);box-shadow:0 0 18px var(--accent)}
+    .mode-badges{display:flex;gap:8px;flex-wrap:wrap}
+    .badge{
+      font-size:12px;padding:6px 10px;border-radius:999px;background:rgba(96,165,250,.14);color:var(--accent);
+      border:1px solid rgba(96,165,250,.25)
+    }
+    .panel{
+      background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);
+      padding:20px;
+    }
+    .grid{
+      display:grid;gap:18px;
+      grid-template-columns: 1.2fr .8fr;
+    }
+    @media (max-width: 860px){
+      .grid{grid-template-columns: 1fr}
+    }
+    .ring-wrap{
+      display:grid;place-items:center;position:relative;min-height:360px;
+    }
+    .ring{
+      --p:0;
+      width:min(380px, 90vw);
+      aspect-ratio:1/1;
+      border-radius:50%;
+      background:
+        radial-gradient(closest-side, var(--panel) 79%, transparent 80% 100%),
+        conic-gradient(var(--ring) calc(var(--p)*1%), var(--ring-bg) 0);
+      display:grid;place-items:center;
+      transition: background 0.3s ease;
+      position:relative;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .time{
+      font-size:54px;font-weight:800;letter-spacing:1.2px;
+    }
+    .sub{
+      color:var(--muted);font-size:14px;margin-top:6px
+    }
+    .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+    .btn{
+      appearance:none;border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer;
+      background:#1f2937;color:var(--text);
+      box-shadow:0 4px 14px rgba(0,0,0,.25);
+      display:inline-flex;gap:8px;align-items:center
+    }
+    .btn.primary{background:var(--accent);color:white}
+    .btn.success{background:var(--success);color:white}
+    .btn.danger{background:var(--danger);color:white}
+    .btn.ghost{background:transparent;border:1px solid rgba(148,163,184,.3);color:var(--muted)}
+    .btn:active{transform:translateY(1px)}
+    .stack{display:grid;gap:12px}
+    .settings{display:grid;gap:12px}
+    .row{display:grid;grid-template-columns: 1fr 1fr;gap:10px}
+    .field{display:grid;gap:6px}
+    label{font-size:13px;color:var(--muted)}
+    input[type="number"]{
+      width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(148,163,184,.35);background:transparent;
+      color:var(--text);font-size:14px
+    }
+    .switch{
+      display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(148,163,184,.35);
+      padding:10px 12px;border-radius:10px
+    }
+    .toggle{position:relative;width:44px;height:26px;background:#e5e7eb;border-radius:999px;cursor:pointer}
+    .toggle::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;background:white;border-radius:999px;transition:.2s}
+    .toggle.on{background:var(--accent)}
+    .toggle.on::after{left:21px}
+    .footer{
+      color:var(--muted);font-size:12px;text-align:center;margin-top:8px
+    }
+    .chips{display:flex;gap:8px;flex-wrap:wrap}
+    .chip{
+      padding:6px 10px;border-radius:999px;background:rgba(148,163,184,.15);color:var(--muted);
+      font-size:12px;border:1px solid rgba(148,163,184,.25)
+    }
+    .kbd{font-variant-numeric: tabular-nums;background:rgba(148,163,184,.18);padding:2px 6px;border-radius:6px;border:1px solid rgba(148,163,184,.3)}
+    .list{display:grid;gap:8px}
+    .stat{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;
+      border:1px solid rgba(148,163,184,.35)}
+  </style>
+</head>
+<body>
+  <div class="app" id="app" data-theme="dark">
+    <div class="topbar">
+      <div class="title"><span class="dot"></span>番茄鐘 Pomodoro</div>
+      <div class="mode-badges">
+        <span class="badge" id="mode-badge">專注</span>
+        <span class="badge" id="cycle-badge">第 1 / 4 顆番茄</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <section class="panel stack">
+        <div class="ring-wrap">
+          <div class="ring" id="ring" style="--p:0">
+            <div style="text-align:center">
+              <div class="time" id="time">25:00</div>
+              <div class="sub" id="sub">準備開始專注吧</div>
+              <div class="controls">
+                <button class="btn primary" id="startPause">開始</button>
+                <button class="btn ghost" id="reset">重置</button>
+                <button class="btn success" id="skip">跳過</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="background:transparent;padding:0">
+          <div class="chips">
+            <span class="chip">空白鍵：開始/暫停</span>
+            <span class="chip">N：跳過</span>
+            <span class="chip">R：重置</span>
+            <span class="chip">↑/↓：音量 ±</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel stack">
+        <div class="settings">
+          <div class="row">
+            <div class="field">
+              <label>專注（分鐘）</label>
+              <input type="number" id="focusMins" min="1" max="180" value="25">
+            </div>
+            <div class="field">
+              <label>短休息（分鐘）</label>
+              <input type="number" id="shortMins" min="1" max="60" value="5">
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>長休息（分鐘）</label>
+              <input type="number" id="longMins" min="1" max="90" value="15">
+            </div>
+            <div class="field">
+              <label>每幾顆番茄長休</label>
+              <input type="number" id="cycles" min="2" max="12" value="4">
+            </div>
+          </div>
+
+          <div class="switch">
+            <span>自動開始下一階段</span>
+            <div class="toggle" id="autoNext"></div>
+          </div>
+          <div class="switch">
+            <span>聲音提醒</span>
+            <div class="toggle on" id="soundToggle"></div>
+          </div>
+          <div class="switch">
+            <span>桌面通知</span>
+            <div class="toggle" id="notifyToggle"></div>
+          </div>
+          <div class="switch">
+            <span>亮色主題</span>
+            <div class="toggle" id="themeToggle"></div>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="stat"><span>今日完成番茄</span><strong id="todayCount">0</strong></div>
+          <div class="stat"><span>總完成番茄</span><strong id="totalCount">0</strong></div>
+          <div class="stat"><span>當前音量</span><strong id="volPct">80%</strong></div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="footer">© <span id="year"></span> 番茄鐘 — 保存設定於本機，不傳出網路。</div>
+  </div>
+
+<script>
+(function(){
+  const $ = s=>document.querySelector(s);
+  const app = $('#app');
+  const timeEl = $('#time'), subEl = $('#sub'), ring = $('#ring');
+  const startPauseBtn = $('#startPause'), resetBtn = $('#reset'), skipBtn = $('#skip');
+  const modeBadge = $('#mode-badge'), cycleBadge = $('#cycle-badge');
+  const focusMinsEl = $('#focusMins'), shortMinsEl = $('#shortMins'), longMinsEl = $('#longMins'), cyclesEl = $('#cycles');
+  const autoNextTgl = $('#autoNext'), soundTgl = $('#soundToggle'), notifyTgl = $('#notifyToggle'), themeTgl = $('#themeToggle');
+  const todayCountEl = $('#todayCount'), totalCountEl = $('#totalCount'), volPctEl = $('#volPct');
+  $('#year').textContent = new Date().getFullYear();
+
+  const STORAGE_KEY = 'pomodoro.settings.v1';
+  const STATS_KEY = 'pomodoro.stats.v1';
+  const TITLE_BASE = '番茄鐘 — ';
+
+  let state = {
+    mode:'focus', // focus | short | long
+    remaining: 25*60,
+    running:false,
+    cycle:1,
+    cyclesPerLong:4,
+    volume:0.8
+  };
+
+  const settings = loadSettings();
+  applySettings(settings);
+
+  let tickTimer = null;
+  let lastTick = null;
+
+  function loadSettings(){
+    try{
+      const s = JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
+      return {
+        focus: s.focus ?? 25,
+        short: s.short ?? 5,
+        long:  s.long ?? 15,
+        cycles:s.cycles ?? 4,
+        autoNext: s.autoNext ?? false,
+        sound: s.sound ?? true,
+        notify: s.notify ?? false,
+        theme: s.theme ?? 'dark',
+        volume: s.volume ?? 0.8
+      };
+    }catch(e){
+      return {focus:25,short:5,long:15,cycles:4,autoNext:false,sound:true,notify:false,theme:'dark',volume:0.8};
+    }
+  }
+
+  function saveSettings(){
+    const s = {
+      focus: +focusMinsEl.value,
+      short: +shortMinsEl.value,
+      long: +longMinsEl.value,
+      cycles:+cyclesEl.value,
+      autoNext: autoNextTgl.classList.contains('on'),
+      sound: soundTgl.classList.contains('on'),
+      notify: notifyTgl.classList.contains('on'),
+      theme: app.dataset.theme,
+      volume: state.volume
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  }
+
+  function loadStats(){
+    try{
+      const s = JSON.parse(localStorage.getItem(STATS_KEY)||'{}');
+      const today = new Date().toISOString().slice(0,10);
+      if(s.date !== today){ s.date = today; s.today=0; }
+      return { today: s.today||0, total:s.total||0, date:s.date };
+    }catch(e){ return {today:0,total:0,date:new Date().toISOString().slice(0,10)}; }
+  }
+
+  function saveStats(stats){
+    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  }
+
+  let stats = loadStats();
+  renderStats();
+
+  function renderStats(){
+    todayCountEl.textContent = stats.today;
+    totalCountEl.textContent = stats.total;
+    volPctEl.textContent = Math.round(state.volume*100)+'%';
+  }
+
+  function format(sec){
+    const m = Math.floor(sec/60).toString().padStart(2,'0');
+    const s = Math.floor(sec%60).toString().padStart(2,'0');
+    return m+':'+s;
+  }
+
+  function setMode(mode, keepCycle=false){
+    state.mode = mode;
+    state.running = false;
+    clearInterval(tickTimer); tickTimer=null;
+    lastTick=null;
+
+    const durs = {focus:+focusMinsEl.value*60, short:+shortMinsEl.value*60, long:+longMinsEl.value*60};
+    state.remaining = durs[mode];
+    startPauseBtn.textContent='開始';
+    subEl.textContent = mode==='focus'?'準備開始專注吧':(mode==='short'?'放鬆一下～':'長休息，補充能量');
+    modeBadge.textContent = mode==='focus'?'專注':(mode==='short'?'短休息':'長休息');
+    document.title = TITLE_BASE + format(state.remaining);
+
+    if(!keepCycle){
+      cycleBadge.textContent = `第 ${state.cycle} / ${state.cyclesPerLong} 顆番茄`;
+    }
+    updateRing();
+  }
+
+  function updateRing(){
+    const total = state.mode==='focus'? +focusMinsEl.value*60 : (state.mode==='short'? +shortMinsEl.value*60 : +longMinsEl.value*60);
+    const progress = (1 - state.remaining/total)*100;
+    ring.style.setProperty('--p', progress.toFixed(2));
+    timeEl.textContent = format(state.remaining);
+    document.title = TITLE_BASE + format(state.remaining);
+  }
+
+  function beep(){
+    if(!soundTgl.classList.contains('on')) return;
+    try{
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type='sine'; o.frequency.value=880;
+      g.gain.value = 0.0001;
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      const now = ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.02*state.volume, now+0.02);
+      o.frequency.exponentialRampToValueAtTime(660, now+0.18);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.4);
+      o.stop(now+0.45);
+    }catch(e){/* ignore */}
+  }
+
+  async function notify(msg){
+    if(!notifyTgl.classList.contains('on')){ beep(); return; }
+    try{
+      if(Notification.permission === 'default'){
+        await Notification.requestPermission();
+      }
+      if(Notification.permission === 'granted'){
+        new Notification('番茄鐘', { body: msg, silent: !soundTgl.classList.contains('on') });
+        beep();
+      }else{
+        beep();
+        alert(msg);
+      }
+    }catch(e){
+      beep();
+      alert(msg);
+    }
+  }
+
+  function nextPhase(){
+    if(state.mode==='focus'){
+      // completed one focus
+      stats.today++; stats.total++; renderStats(); saveStats(stats);
+      if(state.cycle >= state.cyclesPerLong){
+        state.cycle = 1;
+        setMode('long');
+      }else{
+        state.cycle++;
+        setMode('short');
+      }
+      cycleBadge.textContent = `第 ${state.cycle} / ${state.cyclesPerLong} 顆番茄`;
+    }else{
+      // from any break -> next focus
+      setMode('focus', true);
+    }
+    notify(state.mode==='focus'?'開始專注！':'休息一下～');
+    if(settings.autoNext || autoNextTgl.classList.contains('on')){
+      start();
+    }
+  }
+
+  function start(){
+    if(state.running) return;
+    state.running = true;
+    startPauseBtn.textContent='暫停';
+    lastTick = performance.now();
+    tickTimer = setInterval(()=>{
+      const now = performance.now();
+      const dt = Math.min(1.2, (now - lastTick)/1000); // clamp to avoid huge jumps
+      lastTick = now;
+      state.remaining = Math.max(0, state.remaining - dt);
+      updateRing();
+      if(state.remaining <= 0.05){
+        clearInterval(tickTimer); tickTimer=null; state.running=false;
+        nextPhase();
+      }
+    }, 250);
+  }
+  function pause(){
+    state.running=false;
+    startPauseBtn.textContent='開始';
+    clearInterval(tickTimer); tickTimer=null;
+  }
+
+  // Handlers
+  startPauseBtn.addEventListener('click', ()=> state.running ? pause() : start());
+  resetBtn.addEventListener('click', ()=> { setMode(state.mode,true); });
+  skipBtn.addEventListener('click', ()=> { nextPhase(); });
+
+  // Settings wiring
+  [focusMinsEl, shortMinsEl, longMinsEl, cyclesEl].forEach(inp=>{
+    inp.addEventListener('change', ()=>{
+      if(+inp.value <= 0) inp.value = 1;
+      if(inp === cyclesEl){
+        state.cyclesPerLong = +cyclesEl.value;
+        cycleBadge.textContent = `第 ${state.cycle} / ${state.cyclesPerLong} 顆番茄`;
+      }
+      if(!state.running) setMode(state.mode,true);
+      saveSettings();
+    });
+  });
+
+  function toggle(el){
+    el.classList.toggle('on');
+    saveSettings();
+  }
+  autoNextTgl.addEventListener('click', ()=> toggle(autoNextTgl));
+  soundTgl.addEventListener('click', ()=> toggle(soundTgl));
+  notifyTgl.addEventListener('click', async ()=>{
+    toggle(notifyTgl);
+    if(notifyTgl.classList.contains('on') && Notification && Notification.permission==='default'){
+      try{ await Notification.requestPermission(); }catch(e){}
+    }
+  });
+  themeTgl.addEventListener('click', ()=>{
+    const to = app.dataset.theme==='dark'?'light':'dark';
+    app.dataset.theme = to;
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', to==='dark'?'#111827':'#f6f7fb');
+    toggle(themeTgl);
+  });
+
+  // Keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(['INPUT'].includes(document.activeElement.tagName)) return;
+    if(e.code==='Space'){ e.preventDefault(); state.running?pause():start(); }
+    if(e.key==='n' || e.key==='N'){ nextPhase(); }
+    if(e.key==='r' || e.key==='R'){ setMode(state.mode,true); }
+    if(e.key==='ArrowUp'){ state.volume = Math.min(1, state.volume+0.05); renderStats(); saveSettings(); }
+    if(e.key==='ArrowDown'){ state.volume = Math.max(0, state.volume-0.05); renderStats(); saveSettings(); }
+  });
+
+  function applySettings(s){
+    focusMinsEl.value = s.focus; shortMinsEl.value = s.short; longMinsEl.value = s.long; cyclesEl.value = s.cycles;
+    state.cyclesPerLong = s.cycles;
+    if(s.autoNext) autoNextTgl.classList.add('on');
+    if(s.sound) soundTgl.classList.add('on'); else soundTgl.classList.remove('on');
+    if(s.notify) notifyTgl.classList.add('on');
+    app.dataset.theme = s.theme;
+    if(s.theme==='light') themeTgl.classList.add('on');
+    state.volume = s.volume ?? 0.8;
+    setMode('focus');
+  }
+
+  // First paint
+  setMode('focus');
+  saveSettings();
+
+})();</script>
+</body>
+</html>
+"""
+with open('/mnt/data/pomodoro.html','w', encoding='utf-8') as f:
+    f.write(html)
+'/mnt/data/pomodoro.html'
