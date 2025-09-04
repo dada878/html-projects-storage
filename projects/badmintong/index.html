@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>羽球 21 分記分器</title>
+<style>
+:root{--bg:#071018; --card:#0f141a; --accent:#10b981; --muted:#9aa3af; --court:#0f7a49; --line:#f4f7fb}
+*{box-sizing:border-box}
+html,body{height:100%;}
+body{margin:0;font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", Arial, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;background:linear-gradient(180deg,#06101a,#041018);color:#e6eef2}
+.screen{display:none;height:100dvh;padding:16px}
+.screen.active{display:block}
+.container{max-width:1100px;margin:0 auto}
+.card{background:linear-gradient(180deg,#0b1318,#071018);border-radius:16px;padding:18px;border:1px solid rgba(255,255,255,0.04)}
+h1{margin:0 0 8px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:12px}
+textarea{width:100%;padding:10px;border-radius:12px;background:#08121a;border:1px solid rgba(255,255,255,0.03);color:inherit}
+.row{display:flex;gap:8px;align-items:center}
+.btn{border:0;padding:10px 14px;border-radius:12px;cursor:pointer}
+.btn-primary{background:var(--accent);color:#042117;font-weight:700}
+.note{font-size:13px;color:var(--muted)}
+
+/* Court (full screen app-like) */
+.app{position:fixed;inset:0;display:flex;flex-direction:column}
+.header{height:54px;display:flex;align-items:center;gap:12px;padding:8px 12px}
+.menu-btn{background:transparent;border:0;color:inherit;font-size:20px;padding:8px;border-radius:8px}
+.menu-panel{position:absolute;left:12px;top:58px;background:#071018;border:1px solid rgba(255,255,255,0.04);border-radius:12px;overflow:hidden;display:none;z-index:40}
+.menu-panel button{display:block;padding:10px 16px;background:transparent;border:0;color:inherit;text-align:left;min-width:200px}
+.menu-panel button:hover{background:rgba(255,255,255,0.02)}
+.title{flex:1;text-align:center;font-weight:700}
+
+.court-wrap{position:relative;flex:1;margin:12px;border-radius:18px;overflow:hidden;background:linear-gradient(180deg,#0f7a49,#0d6a3f)}
+.court-line{position:absolute;left:50%;top:0;bottom:0;width:4px;background:var(--line);transform:translateX(-50%);opacity:.9}
+.half{position:absolute;left:0;right:0;height:50%;display:block}
+.half.top{top:0}
+.half.bottom{bottom:0}
+.tap-zone{position:absolute;inset:0}
+.hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.25);padding:8px 12px;border-radius:999px;font-size:13px}
+
+/* Big scores near midline */
+.score-display{position:absolute;left:50%;transform:translateX(-50%);color:#fff;font-weight:900;mix-blend-mode:screen;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.18);padding:6px 10px;border-radius:10px}
+.score-top{top:42%;font-size:clamp(40px,10vw,120px)}
+.score-bottom{top:54%;font-size:clamp(40px,10vw,120px)}
+
+/* Player circles */
+.player-circle{position:absolute;width:86px;height:86px;border-radius:50%;background:rgba(255,255,255,0.95);color:#062b1c;display:flex;align-items:center;justify-content:center;font-weight:700;border:4px solid rgba(2,6,8,0.25);box-shadow:0 8px 20px rgba(0,0,0,0.4)}
+.player-label{font-size:14px;text-align:center;padding:6px}
+.serve-badge{position:absolute;font-size:12px;padding:6px 8px;border-radius:999px;background:rgba(16,185,129,0.12);color:#9ff1cf;border:1px solid rgba(16,185,129,0.28)}
+
+/* History modal / screen */
+.history-screen{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:60}
+.history-panel{width:min(920px,94vw);max-height:80vh;overflow:auto;background:#071018;border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.04)}
+.history-item{padding:10px;border-bottom:1px solid rgba(255,255,255,0.02)}
+.small{font-size:12px;color:var(--muted)}
+
+/* End modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:80}
+.modal-card{background:#0b1418;padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);width:min(420px,92vw)}
+
+@media(max-width:520px){.player-circle{width:72px;height:72px}.score-top,.score-bottom{font-size:clamp(28px,16vw,84px)}}
+</style>
+</head>
+<body>
+
+<!-- Start screen -->
+<section id="startScreen" class="screen active">
+  <div class="container">
+    <div class="card">
+      <h1>羽球 21 分記分器</h1>
+      <div class="subtitle">只需輸入兩隊球員（每隊 1–2 名） → 進入比賽畫面（點上/下半場加分、上滑復原）</div>
+      <div style="display:grid;gap:10px">
+        <div>
+          <label class="small">隊伍 A 球員（1–2 名，逗號或換行分隔）</label>
+          <textarea id="aPlayers" placeholder="例如：王小明, 陳大華"></textarea>
+        </div>
+        <div>
+          <label class="small">隊伍 B 球員（1–2 名，逗號或換行分隔）</label>
+          <textarea id="bPlayers" placeholder="例如：林小美, 張阿仁"></textarea>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px;justify-content:space-between;align-items:center">
+        <div class="note">提示：比賽中左上角選單包含「開始新比賽」與「歷史紀錄」</div>
+        <button class="btn btn-primary" id="startBtn">開始比賽</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- App / Court -->
+<div id="app" class="app" style="display:none">
+  <div class="header">
+    <div style="position:relative">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <div class="menu-panel" id="menuPanel">
+        <button id="menuNew">開始新比賽</button>
+        <button id="menuHistory">歷史紀錄</button>
+      </div>
+    </div>
+    <div class="title">羽球 21 分記分器</div>
+    <div style="width:48px"></div>
+  </div>
+
+  <div class="court-wrap" id="courtWrap">
+    <div class="court-line"></div>
+    <div class="half top"><div class="tap-zone" id="tapTop" data-team="A"></div></div>
+    <div class="half bottom"><div class="tap-zone" id="tapBottom" data-team="B"></div></div>
+
+    <!-- big scores near midline -->
+    <div class="score-display score-top" id="scoreTop">0</div>
+    <div class="score-display score-bottom" id="scoreBottom">0</div>
+
+    <!-- players will be rendered here dynamically -->
+    <div id="playersLayer"></div>
+
+    <div class="hint">點擊上/下半場加分 · 上滑復原（或按 U）</div>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div class="history-screen" id="historyScreen">
+  <div class="history-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">歷史紀錄</h3>
+      <div>
+        <button id="clearHistoryBtn" class="btn">清空</button>
+        <button id="closeHistoryBtn" class="btn">關閉</button>
+      </div>
+    </div>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<!-- End Match Modal -->
+<div class="modal" id="endModal">
+  <div class="modal-card">
+    <h3>確認結束這場比賽？</h3>
+    <p id="endSummary" class="small"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button id="endCancel" class="btn">取消</button>
+      <button id="endConfirm" class="btn btn-primary">確認並儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Elements
+const startScreen = document.getElementById('startScreen');
+const app = document.getElementById('app');
+const menuBtn = document.getElementById('menuBtn');
+const menuPanel = document.getElementById('menuPanel');
+const menuNew = document.getElementById('menuNew');
+const menuHistory = document.getElementById('menuHistory');
+const startBtn = document.getElementById('startBtn');
+const tapTop = document.getElementById('tapTop');
+const tapBottom = document.getElementById('tapBottom');
+const scoreTop = document.getElementById('scoreTop');
+const scoreBottom = document.getElementById('scoreBottom');
+const playersLayer = document.getElementById('playersLayer');
+const courtWrap = document.getElementById('courtWrap');
+const historyScreen = document.getElementById('historyScreen');
+const historyList = document.getElementById('historyList');
+const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+const endModal = document.getElementById('endModal');
+const endSummary = document.getElementById('endSummary');
+const endCancel = document.getElementById('endCancel');
+const endConfirm = document.getElementById('endConfirm');
+
+// State
+let state = null; // {A:{players:[],score, rightCourt}, B:{...}, serve:'A'|'B', stack:[]}
+const LS_KEY = 'badminton-history-v1';
+
+// Utilities
+function parsePlayers(text){
+  return text.split(/
+|,|、|，/).map(s=>s.trim()).filter(Boolean).slice(0,2);
+}
+function showStart(){ startScreen.classList.add('active'); app.style.display='none'; }
+function showApp(){ startScreen.classList.remove('active'); app.style.display='flex'; }
+
+function loadHistory(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'[]') }catch(e){return[]} }
+function saveHistory(arr){ localStorage.setItem(LS_KEY, JSON.stringify(arr)) }
+function addHistory(rec){ const arr = loadHistory(); arr.unshift(rec); saveHistory(arr) }
+
+// Start match
+startBtn.addEventListener('click', ()=>{
+  const aPlayers = parsePlayers(document.getElementById('aPlayers').value);
+  const bPlayers = parsePlayers(document.getElementById('bPlayers').value);
+  if(aPlayers.length===0) aPlayers.push('A1');
+  if(bPlayers.length===0) bPlayers.push('B1');
+  state = {
+    A:{players:aPlayers, score:0, rightCourt:true},
+    B:{players:bPlayers, score:0, rightCourt:true},
+    serve:'A',
+    stack:[]
+  };
+  renderAll();
+  showApp();
+});
+
+// Menu
+menuBtn.addEventListener('click', (e)=>{ menuPanel.style.display = menuPanel.style.display==='block'?'none':'block'; });
+menuNew.addEventListener('click', ()=>{ if(confirm('確定要開始新比賽？目前比賽將會結束且不儲存（若尚未儲存）。')){ showStart(); menuPanel.style.display='none'; } });
+menuHistory.addEventListener('click', ()=>{ renderHistory(); menuPanel.style.display='none'; historyScreen.style.display='flex'; });
+
+closeHistoryBtn.addEventListener('click', ()=>{ historyScreen.style.display='none'; });
+clearHistoryBtn.addEventListener('click', ()=>{ if(confirm('確定清空所有歷史紀錄？')){ saveHistory([]); renderHistory(); } });
+
+// Render functions
+function renderAll(){ renderScores(); renderPlayers(); updateServeBadges(); }
+function renderScores(){ scoreTop.textContent = state? state.A.score : 0; scoreBottom.textContent = state? state.B.score : 0; }
+
+function renderPlayers(){ playersLayer.innerHTML = '';
+  if(!state) return;
+  // helper to create circle
+  const createCircle = (name,xPct,yPct,id)=>{
+    const el = document.createElement('div');
+    el.className='player-circle';
+    el.style.left = `calc(${xPct}% - 43px)`; // center offset (half of 86px)
+    el.style.top = `calc(${yPct}% - 43px)`;
+    el.dataset.id = id || '';
+    el.innerHTML = `<div class="player-label">${escapeHtml(name)}</div>`;
+    playersLayer.appendChild(el);
+    return el;
+  };
+
+  // Top (A) positions
+  const A = state.A;
+  const B = state.B;
+  // coordinates: left 22%, right 78%; top half y ~26%; bottom half y ~74%
+  const leftX = 22, rightX = 78, topY = 26, bottomY=74, centerX=50;
+
+  // A players
+  if(A.players.length===1){ createCircle(A.players[0], centerX, topY, 'A0'); }
+  else{
+    // if rightCourt true => index0 at right, index1 at left
+    if(A.rightCourt){ createCircle(A.players[0], rightX, topY, 'A0'); createCircle(A.players[1], leftX, topY, 'A1'); }
+    else{ createCircle(A.players[0], leftX, topY, 'A0'); createCircle(A.players[1], rightX, topY, 'A1'); }
+  }
+
+  // B players
+  if(B.players.length===1){ createCircle(B.players[0], centerX, bottomY, 'B0'); }
+  else{
+    // For B we mirror positions (but use same left/right values)
+    if(B.rightCourt){ createCircle(B.players[0], rightX, bottomY, 'B0'); createCircle(B.players[1], leftX, bottomY, 'B1'); }
+    else{ createCircle(B.players[0], leftX, bottomY, 'B0'); createCircle(B.players[1], rightX, bottomY, 'B1'); }
+  }
+
+  updateServeBadges();
+}
+
+function updateServeBadges(){ // remove old badges
+  document.querySelectorAll('.serve-badge').forEach(n=>n.remove());
+  if(!state) return;
+  ['A','B'].forEach(team=>{
+    if(state.serve!==team) return;
+    const t = state[team];
+    const score = t.score;
+    const serverIsEven = (score % 2 === 0); // even -> right court
+    // determine actual player index who is on right side (indexRight)
+    // if rightCourt true => index0 is on right
+    let indexRight = t.rightCourt ? 0 : 1;
+    let serverIndex; // 0 or 1
+    if(t.players.length===1) serverIndex = 0;
+    else serverIndex = serverIsEven ? indexRight : (indexRight===0?1:0);
+
+    // find the player circle element
+    const id = `${team}${serverIndex}`;
+    const el = document.querySelector(`[data-id='${id}']`);
+    if(el){
+      const badge = document.createElement('div'); badge.className='serve-badge'; badge.textContent='發球';
+      // position badge near circle (top-right)
+      badge.style.left = `calc(${el.style.left} + 62px)`;
+      badge.style.top = `calc(${el.style.top} + 8px)`;
+      playersLayer.appendChild(badge);
+    }
+  });
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])) }
+
+// Scoring / rules
+function pushState(){
+  if(!state) return;
+  state.stack.push({
+    Aplayers:[...state.A.players],Bplayers:[...state.B.players],
+    Ascore:state.A.score,Bscore:state.B.score,
+    Aright:state.A.rightCourt,Bright:state.B.rightCourt,serve:state.serve
+  });
+}
+
+function swapPositions(team){
+  // swap the players array to represent change of position
+  if(state[team].players.length===2){ const arr = state[team].players; [arr[0],arr[1]]=[arr[1],arr[0]]; }
+}
+
+function setServe(team){ state.serve = team; }
+
+function recordPoint(team){ if(!state) return; const other = team==='A'?'B':'A';
+  pushState();
+  state[team].score++;
+  // if same team was serving -> consecutive -> swap positions (換位發球)
+  if(state.serve===team){ swapPositions(team); }
+  else{ // serve switches to scoring team; server side parity affects which player serves (handled in badge rendering)
+    setServe(team);
+    // do NOT automatically change rightCourt here — we'll keep rightCourt as team's arrangement indicator
+    // But to reflect which side players should occupy relative to parity, we can keep rightCourt unchanged
+    // (visual server selection is computed when rendering badges)
+    // Optionally, if a team only has one player nothing to change
+  }
+  renderAll();
+  checkWin();
+}
+
+function undo(){ if(!state || !state.stack.length){ alert('沒有可復原的動作'); return; }
+  const prev = state.stack.pop();
+  state.A.players = prev.Aplayers; state.B.players = prev.Bplayers;
+  state.A.score = prev.Ascore; state.B.score = prev.Bscore;
+  state.A.rightCourt = prev.Aright; state.B.rightCourt = prev.Bright; state.serve = prev.serve;
+  renderAll();
+}
+
+// Win check (21 with advantage 2)
+function checkWin(){ const a=state.A.score,b=state.B.score; const diff=Math.abs(a-b); if((a>=21||b>=21) && diff>=2){ // show modal
+    endSummary.textContent = `${state.A.players.join('、')} ${a} : ${b} ${state.B.players.join('、')}`;
+    endModal.style.display='flex';
+  }
+}
+
+endCancel.addEventListener('click', ()=>{ endModal.style.display='none'; });
+endConfirm.addEventListener('click', ()=>{
+  // save record
+  addHistory({ time: Date.now(), A:{players:[...state.A.players],score:state.A.score}, B:{players:[...state.B.players],score:state.B.score} );
+  endModal.style.display='none';
+  alert('已儲存至歷史紀錄');
+  // back to start
+  state = null; renderAll(); showStart(); historyScreen.style.display='none';
+});
+
+// Tap handlers
+tapTop.addEventListener('click', ()=>{ recordPoint('A'); });
+tapBottom.addEventListener('click', ()=>{ recordPoint('B'); });
+
+// Touch swipe up on court to undo
+let touchStartY = null, touchStartX = null;
+courtWrap.addEventListener('touchstart', (e)=>{ const t=e.changedTouches[0]; touchStartY=t.clientY; touchStartX=t.clientX; }, {passive:true});
+courtWrap.addEventListener('touchend', (e)=>{ const t=e.changedTouches[0]; const dy=t.clientY-touchStartY; const dx=Math.abs(t.clientX-touchStartX); if(dy < -50 && dx < 80){ undo(); } });
+
+// Keyboard undo
+document.addEventListener('keydown', (e)=>{ if(e.key==='u' || e.key==='U'){ undo(); } });
+
+// Render history
+function renderHistory(){ historyList.innerHTML=''; const arr = loadHistory(); if(arr.length===0){ historyList.innerHTML='<div class="history-item">尚無紀錄</div>'; return; } arr.forEach((h,idx)=>{ const d = new Date(h.time); const div = document.createElement('div'); div.className='history-item'; div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${h.A.players.join('、')}</strong> ${h.A.score} : ${h.B.score} <strong>${h.B.players.join('、')}</strong></div><div class="small">${d.toLocaleString()}</div></div>`; historyList.appendChild(div); }); }
+
+// initial load: nothing
+showStart();
+</script>
+</body>
+</html>
