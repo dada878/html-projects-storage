@@ -1,0 +1,223 @@
+
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>羽球比賽模擬器</title>
+<style>
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: sans-serif;
+}
+#menu {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: #333;
+    color: white;
+    padding: 10px;
+    z-index: 10;
+}
+#menu button {
+    display: block;
+    margin: 5px 0;
+    background: #555;
+    color: white;
+    border: none;
+    padding: 5px;
+    cursor: pointer;
+}
+#setup, #history {
+    padding: 20px;
+}
+#court {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(to bottom, #aaffaa 50%, #aaaaff 50%);
+    position: relative;
+}
+.score {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2em;
+    background: white;
+    padding: 10px;
+    border-radius: 10px;
+}
+#scoreA {
+    left: 25%;
+}
+#scoreB {
+    right: 25%;
+}
+.player {
+    position: absolute;
+    font-size: 1em;
+    padding: 5px;
+    border: 2px solid black;
+    border-radius: 50%;
+    background: white;
+}
+#serveIndicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: yellow;
+    padding: 5px;
+    border: 1px solid black;
+}
+</style>
+</head>
+<body>
+<div id="menu">
+    <button onclick="showSetup()">開始新比賽</button>
+    <button onclick="showHistory()">歷史紀錄</button>
+</div>
+
+<div id="setup">
+    <h2>輸入球員（A隊，B隊）</h2>
+    <textarea id="playersA" rows="2" cols="30" placeholder="A隊球員，逗號或換行分隔"></textarea><br>
+    <textarea id="playersB" rows="2" cols="30" placeholder="B隊球員，逗號或換行分隔"></textarea><br>
+    <button onclick="startMatch()">開始比賽</button>
+</div>
+
+<div id="history" style="display:none;">
+    <h2>歷史紀錄</h2>
+    <div id="historyList"></div>
+    <button onclick="clearHistory()">清空紀錄</button>
+</div>
+
+<div id="court" onclick="handleCourtClick(event)">
+    <div id="scoreA" class="score">0</div>
+    <div id="scoreB" class="score">0</div>
+    <div id="serveIndicator">發球</div>
+</div>
+
+<script>
+let playersA = [], playersB = [];
+let scoreA = 0, scoreB = 0;
+let history = [];
+let serveTeam = 'A';
+let serveSide = 'left';
+let positions = {A: [], B: []};
+
+function showSetup() {
+    document.getElementById('setup').style.display = 'block';
+    document.getElementById('court').style.display = 'none';
+    document.getElementById('history').style.display = 'none';
+}
+
+function showHistory() {
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('court').style.display = 'none';
+    document.getElementById('history').style.display = 'block';
+    let list = JSON.parse(localStorage.getItem('matchHistory') || '[]');
+    let html = list.map(item => `<div>${item}</div>`).join('');
+    document.getElementById('historyList').innerHTML = html;
+}
+
+function clearHistory() {
+    localStorage.removeItem('matchHistory');
+    showHistory();
+}
+
+function startMatch() {
+    playersA = document.getElementById('playersA').value.split(/,|\n/).map(p => p.trim()).filter(p => p);
+    playersB = document.getElementById('playersB').value.split(/,|\n/).map(p => p.trim()).filter(p => p);
+    scoreA = 0;
+    scoreB = 0;
+    history = [];
+    serveTeam = 'A';
+    serveSide = 'left';
+    updateCourt();
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('court').style.display = 'block';
+}
+
+function updateCourt() {
+    document.getElementById('scoreA').innerText = scoreA;
+    document.getElementById('scoreB').innerText = scoreB;
+    document.getElementById('serveIndicator').innerText = `發球：${serveTeam}隊 ${serveSide === 'left' ? '左場' : '右場'}`;
+    // TODO: update player positions and serve marker
+}
+
+function handleCourtClick(event) {
+    let y = event.clientY;
+    let half = window.innerHeight / 2;
+    if (y < half) {
+        scoreA++;
+        history.push('A');
+        checkWin();
+    } else {
+        scoreB++;
+        history.push('B');
+        checkWin();
+    }
+    updateServe();
+    updateCourt();
+}
+
+function updateServe() {
+    let last = history[history.length - 1];
+    if (history.length >= 2 && history[history.length - 2] === last) {
+        // same team scored again, switch positions
+        if (last === 'A' && playersA.length === 2) playersA.reverse();
+        if (last === 'B' && playersB.length === 2) playersB.reverse();
+    } else {
+        serveTeam = last;
+        let score = last === 'A' ? scoreA : scoreB;
+        serveSide = score % 2 === 0 ? 'right' : 'left';
+    }
+}
+
+function checkWin() {
+    if ((scoreA >= 21 || scoreB >= 21) && Math.abs(scoreA - scoreB) >= 2) {
+        if (confirm("是否結束比賽？")) {
+            let record = `A隊(${playersA.join(',')}) ${scoreA} - ${scoreB} B隊(${playersB.join(',')})`;
+            let list = JSON.parse(localStorage.getItem('matchHistory') || '[]');
+            list.push(record);
+            localStorage.setItem('matchHistory', JSON.stringify(list));
+            showSetup();
+        }
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'u' || e.key === 'U') undo();
+});
+
+function undo() {
+    if (history.length === 0) return;
+    let last = history.pop();
+    if (last === 'A') scoreA--;
+    else scoreB--;
+    updateServe();
+    updateCourt();
+}
+
+document.addEventListener('touchstart', handleTouchStart, false);
+document.addEventListener('touchmove', handleTouchMove, false);
+let xDown = null;
+let yDown = null;
+
+function handleTouchStart(evt) {
+    xDown = evt.touches[0].clientX;
+    yDown = evt.touches[0].clientY;
+}
+
+function handleTouchMove(evt) {
+    if (!xDown || !yDown) return;
+    let xUp = evt.touches[0].clientX;
+    let yUp = evt.touches[0].clientY;
+    let yDiff = yDown - yUp;
+    if (yDiff > 50) undo();
+    xDown = null;
+    yDown = null;
+}
+</script>
+</body>
+</html>
