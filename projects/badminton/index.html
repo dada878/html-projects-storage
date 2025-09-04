@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>羽球 21 分記分器</title>
+<style>
+  :root{
+    --bg: #0d0f14;
+    --card: #12151d;
+    --accent: #10b981;
+    --muted: #9aa3af;
+    --danger: #ef4444;
+    --court-green: #0f7a49;
+    --court-line: #f4f7fb;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --radius: 18px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", Arial, "PingFang TC", "Heiti TC", "Microsoft JhengHei", sans-serif;
+    background:linear-gradient(180deg,#0b0e15,#07090f 30%, #0b0e15);
+    color:#e5e7eb;
+  }
+  button,input,textarea{font:inherit}
+  .screen{display:none; height:100dvh; padding:16px;}
+  .screen.active{display:flex}
+  .container{margin:auto; width:min(960px,100%);}
+
+  /* Start screen */
+  .card{
+    background:linear-gradient(180deg, #151a25, #0f121a);
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:18px;
+  }
+  h1{margin:8px 0 16px; font-weight:800; letter-spacing:.5px;}
+  .subtitle{color:var(--muted); margin-bottom:16px}
+  .grid{display:grid; gap:12px}
+  @media(min-width:720px){.grid.cols-2{grid-template-columns:1fr 1fr}}
+  .field{display:grid; gap:6px}
+  label{font-size:14px; color:#cbd5e1}
+  input[type="text"], textarea{
+    padding:12px 14px; border-radius:14px; background:#0d1118; border:1px solid #1f2430; color:#e5e7eb;
+  }
+  textarea{min-height:84px; resize:vertical}
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  .btn{
+    border:0; border-radius:14px; padding:12px 16px; cursor:pointer; transition:.2s transform ease, .2s opacity ease;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent); color:#062b1c; font-weight:800}
+  .btn-ghost{background:#0d1118; border:1px solid #1f2430; color:#e5e7eb}
+  .btn-danger{background:var(--danger); color:white}
+
+  .history{margin-top:16px}
+  .history h2{margin:0 0 8px}
+  .history-list{display:grid; gap:10px;}
+  .history-item{display:flex; justify-content:space-between; gap:8px; align-items:center; background:#0d1118; border:1px solid #1f2430; border-radius:14px; padding:10px 12px}
+  .history-item .meta{font-size:12px; color:var(--muted)}
+
+  /* Court screen */
+  .court-wrap{position:relative; width:100%; height:calc(100dvh - 16px - 16px); border-radius:24px; overflow:hidden; border:1px solid rgba(255,255,255,.08); box-shadow:var(--shadow)}
+  .court{position:absolute; inset:0; background:var(--court-green); display:grid; grid-template-rows:1fr 1fr}
+  .court:before{content:""; position:absolute; left:50%; top:0; bottom:0; width:4px; background:var(--court-line); transform:translateX(-50%); opacity:.9}
+  .half{position:relative;}
+  .tap-zone{position:absolute; inset:0;}
+  .half.top{border-bottom:4px solid var(--court-line)}
+  .half.bottom{border-top:4px solid var(--court-line)}
+
+  .team-bar{position:absolute; left:10px; right:10px; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; border-radius:14px; background:rgba(7,9,15,.55); border:1px solid rgba(255,255,255,.08); backdrop-filter: blur(6px)}
+  .team-bar.top{top:10px}
+  .team-bar.bottom{bottom:10px}
+  .team-title{display:flex; flex-direction:column; gap:2px}
+  .team-name{font-weight:800; font-size:18px}
+  .players{font-size:12px; color:#d1d5db}
+  .score{font-size:42px; font-weight:900; letter-spacing:1px}
+  .serve{font-size:12px; padding:4px 8px; border-radius:999px; background:rgba(16,185,129,.15); color:#8ff0c3; border:1px solid rgba(16,185,129,.35)}
+
+  .hint{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.35); color:#e5e7eb; padding:8px 12px; border-radius:999px; font-size:12px; border:1px solid rgba(255,255,255,.1)}
+  .corner{position:absolute; right:10px; top:10px; display:flex; gap:8px}
+
+  .toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#0b0f16; color:#e5e7eb; padding:10px 14px; border-radius:12px; border:1px solid #1f2430; box-shadow:var(--shadow); display:none}
+  .toast.show{display:block}
+
+  /* Modal */
+  .modal{position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.5)}
+  .modal.show{display:grid}
+  .modal-card{background:#0f121a; border:1px solid #1f2430; border-radius:18px; padding:16px; width:min(420px,92vw); box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 8px}
+  .modal .row{justify-content:flex-end}
+
+  .pill{font-size:11px; color:#cbd5e1; border:1px dashed #2b3240; padding:4px 8px; border-radius:999px}
+
+</style>
+</head>
+<body>
+  <!-- Start Screen -->
+  <section id="start" class="screen active">
+    <div class="container">
+      <div class="card">
+        <h1>羽球 21 分記分器</h1>
+        <div class="subtitle">單一 HTML 檔 · 點擊上/下半場加分 · 上滑復原 · 採 21 分、需領先 2 分</div>
+        <div class="grid cols-2">
+          <div class="card" style="padding:12px">
+            <div class="field">
+              <label>隊伍 A 名稱</label>
+              <input id="aName" type="text" placeholder="例如：A 隊" />
+            </div>
+            <div class="field">
+              <label>隊伍 A 球員（1～2 名，以逗號或換行分隔）</label>
+              <textarea id="aPlayers" placeholder="王小明, 陳大華"></textarea>
+            </div>
+          </div>
+          <div class="card" style="padding:12px">
+            <div class="field">
+              <label>隊伍 B 名稱</label>
+              <input id="bName" type="text" placeholder="例如：B 隊" />
+            </div>
+            <div class="field">
+              <label>隊伍 B 球員（1～2 名，以逗號或換行分隔）</label>
+              <textarea id="bPlayers" placeholder="林小美, 張阿仁"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn btn-ghost" id="viewHistoryBtn">查看歷史比賽</button>
+          <div class="pill">提示：開始後可嘗試 <b>點擊上/下半場加分</b>、<b>上滑復原</b>、或按 <b>U</b> 復原</div>
+          <div style="flex:1"></div>
+          <button class="btn btn-primary" id="startBtn">開始比賽</button>
+        </div>
+
+        <div class="history" id="historyBox" style="display:none">
+          <h2>歷史比賽紀錄</h2>
+          <div class="history-list" id="historyList"></div>
+          <div class="row" style="margin-top:8px; justify-content:space-between">
+            <button class="btn btn-ghost" id="closeHistory">關閉</button>
+            <button class="btn btn-danger" id="clearHistory">清空全部紀錄</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Court Screen -->
+  <section id="courtScreen" class="screen">
+    <div class="container" style="width:min(1100px,100%)">
+      <div class="court-wrap" id="courtWrap">
+        <div class="court" id="court">
+          <div class="half top" id="topHalf">
+            <div class="tap-zone" data-team="A"></div>
+          </div>
+          <div class="half bottom" id="bottomHalf">
+            <div class="tap-zone" data-team="B"></div>
+          </div>
+        </div>
+        <div class="team-bar top">
+          <div class="team-title">
+            <div class="team-name" id="teamAName">A 隊</div>
+            <div class="players" id="teamAPlayers"></div>
+          </div>
+          <div class="row">
+            <span class="serve" id="serveA" style="display:none">發球</span>
+            <div class="score" id="scoreA">0</div>
+          </div>
+        </div>
+        <div class="team-bar bottom">
+          <div class="team-title">
+            <div class="team-name" id="teamBName">B 隊</div>
+            <div class="players" id="teamBPlayers"></div>
+          </div>
+          <div class="row">
+            <span class="serve" id="serveB" style="display:none">發球</span>
+            <div class="score" id="scoreB">0</div>
+          </div>
+        </div>
+        <div class="hint">點擊上/下半場加分 · 上滑復原</div>
+        <div class="corner">
+          <button class="btn btn-ghost" id="undoBtn" title="復原 (U)">復原</button>
+          <button class="btn btn-ghost" id="exitBtn">返回</button>
+          <button class="btn btn-primary" id="fullscreenBtn">全螢幕</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- End Match Modal -->
+  <div class="modal" id="endModal">
+    <div class="modal-card">
+      <h3>確認結束這場比賽？</h3>
+      <div id="endSummary" class="subtitle"></div>
+      <div class="row">
+        <button class="btn btn-ghost" id="endCancel">取消</button>
+        <button class="btn btn-primary" id="endConfirm">確認結束並儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const $ = (sel)=>document.querySelector(sel);
+  const $$ = (sel)=>document.querySelectorAll(sel);
+
+  // Screens
+  const startScreen = $('#start');
+  const courtScreen = $('#courtScreen');
+
+  // Start inputs
+  const aName = $('#aName');
+  const bName = $('#bName');
+  const aPlayersInput = $('#aPlayers');
+  const bPlayersInput = $('#bPlayers');
+
+  // Court UI
+  const teamAName = $('#teamAName');
+  const teamBName = $('#teamBName');
+  const teamAPlayers = $('#teamAPlayers');
+  const teamBPlayers = $('#teamBPlayers');
+  const scoreAEl = $('#scoreA');
+  const scoreBEl = $('#scoreB');
+  const serveA = $('#serveA');
+  const serveB = $('#serveB');
+
+  const tapZones = $$('.tap-zone');
+  const undoBtn = $('#undoBtn');
+  const exitBtn = $('#exitBtn');
+  const fullscreenBtn = $('#fullscreenBtn');
+
+  const endModal = $('#endModal');
+  const endSummary = $('#endSummary');
+  const endCancel = $('#endCancel');
+  const endConfirm = $('#endConfirm');
+
+  const viewHistoryBtn = $('#viewHistoryBtn');
+  const historyBox = $('#historyBox');
+  const historyList = $('#historyList');
+  const closeHistory = $('#closeHistory');
+  const clearHistory = $('#clearHistory');
+
+  const toastEl = $('#toast');
+
+  let state = null; // runtime match state
+
+  function show(screen){
+    startScreen.classList.remove('active');
+    courtScreen.classList.remove('active');
+    screen.classList.add('active');
+  }
+
+  // Utilities
+  function parsePlayers(text){
+    return text
+      .split(/\n|,|、|，/)
+      .map(s=>s.trim()).filter(Boolean).slice(0,2);
+  }
+  function renderPlayers(){
+    teamAPlayers.textContent = state.A.players.join(' · ');
+    teamBPlayers.textContent = state.B.players.join(' · ');
+  }
+  function renderScores(){
+    scoreAEl.textContent = state.A.score;
+    scoreBEl.textContent = state.B.score;
+  }
+  function setServe(team){
+    state.serve = team; // 'A' | 'B'
+    serveA.style.display = team==='A'? 'inline-flex':'none';
+    serveB.style.display = team==='B'? 'inline-flex':'none';
+  }
+  function swapPositions(team){
+    // swap two players if there are two
+    const arr = state[team].players;
+    if(arr.length===2){
+      [arr[0], arr[1]] = [arr[1], arr[0]];
+      renderPlayers();
+    }
+    // toggle service court parity marker
+    state[team].rightCourt = !state[team].rightCourt;
+  }
+  function showToast(msg){
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>toastEl.classList.remove('show'), 1500);
+  }
+  function enterFullscreen(){
+    const el = document.documentElement;
+    if(el.requestFullscreen){ el.requestFullscreen(); }
+  }
+
+  // Deuce / win logic: first to >=21 and lead by 2
+  function checkWin(){
+    const a = state.A.score, b = state.B.score;
+    const diff = Math.abs(a-b);
+    const leader = a>b ? 'A' : (b>a ? 'B' : null);
+    if(leader && (a>=21 || b>=21) && diff>=2){
+      const name = leader==='A'? state.A.name : state.B.name;
+      // Confirm end (to avoid accidental taps)
+      endSummary.textContent = `${state.A.name} ${a} : ${b} ${state.B.name}`;
+      endModal.classList.add('show');
+    }
+  }
+
+  function recordPoint(team){
+    const opponent = team==='A'?'B':'A';
+
+    // push to history for undo
+    state.stack.push({
+      A: state.A.score,
+      B: state.B.score,
+      serve: state.serve,
+      Aplayers: [...state.A.players],
+      Bplayers: [...state.B.players],
+      Aright: state.A.rightCourt,
+      Bright: state.B.rightCourt
+    });
+
+    // scoring
+    state[team].score++;
+
+    // serving & rotation rule (simplified doubles logic):
+    // - 如果該隊「連續得分」（上一分也是他們拿的 = 他們原本就在發球），則換位發球（同隊兩人交換位置）
+    // - 若換邊得分，則發球權轉到該隊，但不立即換位；服務位置依照該隊分數偶奇 (偶數右場，奇數左場)
+    if(state.serve===team){
+      // consecutive point while serving: rotate within team
+      swapPositions(team);
+    } else {
+      // serve changes to scoring team
+      setServe(team);
+      // set right/left court by score parity
+      const isEven = state[team].score % 2 === 0;
+      state[team].rightCourt = isEven; // true 表示右場
+    }
+
+    renderScores();
+    checkWin();
+  }
+
+  function undo(){
+    const prev = state.stack.pop();
+    if(!prev){ showToast('沒有可復原的動作'); return; }
+    state.A.score = prev.A;
+    state.B.score = prev.B;
+    state.serve = prev.serve;
+    state.A.players = prev.Aplayers;
+    state.B.players = prev.Bplayers;
+    state.A.rightCourt = prev.Aright;
+    state.B.rightCourt = prev.Bright;
+    setServe(state.serve);
+    renderPlayers();
+    renderScores();
+    endModal.classList.remove('show');
+  }
+
+  function resetToStart(){
+    show(startScreen);
+    document.exitFullscreen?.();
+  }
+
+  function startMatch(){
+    const Aname = aName.value.trim() || 'A 隊';
+    const Bname = bName.value.trim() || 'B 隊';
+    const Aplayers = parsePlayers(aPlayersInput.value);
+    const Bplayers = parsePlayers(bPlayersInput.value);
+    if(Aplayers.length===0) Aplayers.push('A1');
+    if(Bplayers.length===0) Bplayers.push('B1');
+
+    state = {
+      A:{name:Aname, players:Aplayers, score:0, rightCourt:true},
+      B:{name:Bname, players:Bplayers, score:0, rightCourt:true},
+      serve:'A', // 預設 A 先發
+      stack:[]
+    };
+
+    teamAName.textContent = state.A.name;
+    teamBName.textContent = state.B.name;
+    renderPlayers();
+    renderScores();
+    setServe('A');
+
+    // go
+    show(courtScreen);
+    // best-effort fullscreen on user gesture
+    enterFullscreen();
+  }
+
+  // LocalStorage history
+  const LS_KEY = 'badminton-history-v1';
+  function loadHistory(){
+    try{ return JSON.parse(localStorage.getItem(LS_KEY)||'[]'); }catch(e){ return []}
+  }
+  function saveHistory(arr){ localStorage.setItem(LS_KEY, JSON.stringify(arr)); }
+  function addHistory(record){
+    const arr = loadHistory();
+    arr.unshift(record);
+    saveHistory(arr);
+  }
+  function renderHistory(){
+    const arr = loadHistory();
+    historyList.innerHTML = '';
+    if(arr.length===0){
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      div.innerHTML = '<div>尚無紀錄</div>';
+      historyList.appendChild(div);
+      return;
+    }
+    arr.forEach((m,idx)=>{
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      const left = document.createElement('div');
+      left.innerHTML = `<div><b>${escapeHtml(m.A.name)}</b> ${m.A.score} : ${m.B.score} <b>${escapeHtml(m.B.name)}</b></div>
+                        <div class="meta">${new Date(m.time).toLocaleString()} · A(${m.A.players.join('・')}) / B(${m.B.players.join('・')})</div>`;
+      const right = document.createElement('div');
+      const btn = document.createElement('button');
+      btn.className='btn btn-ghost';
+      btn.textContent='詳細';
+      btn.onclick = ()=>{
+        alert(`${m.A.name} vs ${m.B.name}\n比分：${m.A.score} : ${m.B.score}\n球員：\nA: ${m.A.players.join('、')}\nB: ${m.B.players.join('、')}\n時間：${new Date(m.time).toLocaleString()}`);
+      }
+      right.appendChild(btn);
+      item.appendChild(left); item.appendChild(right);
+      historyList.appendChild(item);
+    });
+  }
+  function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s])); }
+
+  // End modal actions
+  endCancel.onclick = ()=> endModal.classList.remove('show');
+  endConfirm.onclick = ()=>{
+    endModal.classList.remove('show');
+    // save to history
+    addHistory({
+      time: Date.now(),
+      A:{ name: state.A.name, players:[...state.A.players], score: state.A.score },
+      B:{ name: state.B.name, players:[...state.B.players], score: state.B.score },
+      winner: state.A.score>state.B.score ? 'A' : 'B'
+    });
+    showToast('已儲存到歷史');
+    resetToStart();
+  };
+
+  // Start events
+  $('#startBtn').onclick = startMatch;
+  viewHistoryBtn.onclick = ()=>{ historyBox.style.display='block'; renderHistory(); };
+  closeHistory.onclick = ()=> historyBox.style.display='none';
+  clearHistory.onclick = ()=>{
+    if(confirm('確定清空所有歷史紀錄？')){ saveHistory([]); renderHistory(); }
+  };
+
+  // Court interactions
+  tapZones.forEach(z=>{
+    // Click / tap add point
+    z.addEventListener('click', (e)=>{
+      const team = z.dataset.team; recordPoint(team);
+    });
+
+    // Touch swipe up to undo
+    let startY=0, startX=0, touched=false;
+    z.addEventListener('touchstart', (e)=>{
+      const t = e.changedTouches[0];
+      startY = t.clientY; startX = t.clientX; touched=true;
+    }, {passive:true});
+    z.addEventListener('touchend', (e)=>{
+      if(!touched) return; touched=false;
+      const t = e.changedTouches[0];
+      const dy = t.clientY - startY;
+      const dx = Math.abs(t.clientX - startX);
+      if(dy < -50 && dx < 60){ // swipe up
+        undo();
+      }
+    });
+  });
+
+  // Keyboard: U to undo
+  document.addEventListener('keydown', (e)=>{
+    if(e.key==='u' || e.key==='U'){ undo(); }
+  });
+
+  undoBtn.onclick = undo;
+  exitBtn.onclick = resetToStart;
+  fullscreenBtn.onclick = enterFullscreen;
+
+})();
+</script>
+</body>
+</html>
