@@ -1,0 +1,488 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+// —————————————————————————————————————————————
+// Pomodoro Timer (Single-File React Component)
+// TailwindCSS for styling. No external deps required.
+// Features
+// - Work / Short Break / Long Break with configurable lengths
+// - Long break every N sessions (configurable)
+// - Start / Pause / Reset / Skip controls
+// - Progress ring + session counter
+// - Keyboard shortcuts: Space (start/pause), R (reset), S (skip)
+// - Sound + Desktop Notifications (optional)
+// - Auto-switch phases + Title updates
+// - Persistent settings & state via localStorage
+// - Light/Dark mode toggle
+// —————————————————————————————————————————————
+
+// Helpers
+const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+const clamp = (n, min, max) => Math.min(Math.max(n, min), max);
+
+const DEFAULTS = {
+  workMin: 25,
+  shortMin: 5,
+  longMin: 15,
+  longEvery: 4,
+  sound: true,
+  notify: false,
+  dark: true,
+};
+
+const STORAGE_KEY = "pomodoro.settings.v1";
+const STATE_KEY = "pomodoro.state.v1";
+
+export default function PomodoroApp() {
+  const [settings, setSettings] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      return { ...DEFAULTS, ...(saved || {}) };
+    } catch {
+      return DEFAULTS;
+    }
+  });
+
+  const initialState = useMemo(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null");
+      if (saved && typeof saved === "object") return saved;
+    } catch {}
+    return {
+      phase: "work", // work | short | long
+      running: false,
+      // We compute by target end time to avoid drift
+      endTs: null, // Number (ms) | null
+      remainingMs: settings.workMin * 60 * 1000,
+      completedWorkSessions: 0,
+      cycleCount: 0, // how many work phases completed in current long cycle
+    };
+  }, []);
+
+  const [state, setState] = useState(initialState);
+
+  const intervalRef = useRef(null);
+  const lastTickRef = useRef(performance.now());
+
+  // Persist settings/state
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  }, [settings]);
+  useEffect(() => {
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  }, [state]);
+
+  // Dark mode
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.dark) root.classList.add("dark");
+    else root.classList.remove("dark");
+  }, [settings.dark]);
+
+  // Title update
+  useEffect(() => {
+    const mm = Math.floor(state.remainingMs / 60000);
+    const ss = Math.floor((state.remainingMs % 60000) / 1000);
+    const phaseLabel = state.phase === "work" ? "Work" : state.phase === "short" ? "Break" : "Long";
+    document.title = `${pad(mm)}:${pad(ss)} • ${phaseLabel} – Pomodoro`;
+  }, [state.remainingMs, state.phase]);
+
+  // Timer loop — uses setInterval(250ms) with endTs to avoid drift
+  useEffect(() => {
+    if (!state.running || !state.endTs) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      const now = performance.now();
+      lastTickRef.current = now;
+      const remaining = Math.max(0, state.endTs - Date.now());
+      setState((s) => ({ ...s, remainingMs: remaining }));
+      if (remaining <= 0) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        onPhaseComplete();
+      }
+    }, 250);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.running, state.endTs]);
+
+  // Play beep (Web Audio)
+  const beep = async () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+      o.stop(ctx.currentTime + 0.32);
+    } catch {}
+  };
+
+  const notify = async (title, body) => {
+    if (!settings.notify) return;
+    if (Notification?.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification && Notification.permission !== "denied") {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") new Notification(title, { body });
+    }
+  };
+
+  // Phase control
+  const phaseDurationMs = (phase) =>
+    (phase === "work"
+      ? settings.workMin
+      : phase === "short"
+      ? settings.shortMin
+      : settings.longMin) * 60 * 1000;
+
+  const startPhase = (phase) => {
+    const dur = phaseDurationMs(phase);
+    setState((s) => ({
+      ...s,
+      phase,
+      running: true,
+      endTs: Date.now() + dur,
+      remainingMs: dur,
+    }));
+  };
+
+  const resume = () => {
+    setState((s) => ({
+      ...s,
+      running: true,
+      endTs: Date.now() + s.remainingMs,
+    }));
+  };
+
+  const pause = () => {
+    setState((s) => ({ ...s, running: false, endTs: null }));
+  };
+
+  const reset = () => {
+    const ms = phaseDurationMs(state.phase);
+    setState((s) => ({ ...s, running: false, endTs: null, remainingMs: ms }));
+  };
+
+  const skip = () => onPhaseComplete(true);
+
+  const nextPhaseAfterWork = (cycleCount, longEvery) =>
+    (cycleCount % longEvery === 0 ? "long" : "short");
+
+  const onPhaseComplete = async (skipped = false) => {
+    // Sound + notif
+    if (!skipped && settings.sound) await beep();
+
+    if (state.phase === "work") {
+      const completed = state.completedWorkSessions + (skipped ? 0 : 1);
+      const newCycle = state.cycleCount + (skipped ? 0 : 1);
+      const np = nextPhaseAfterWork(newCycle, clamp(settings.longEvery, 2, 12));
+      await notify("Work complete!", np === "long" ? "Time for a long break." : "Time for a short break.");
+      setState((s) => ({
+        ...s,
+        completedWorkSessions: completed,
+        cycleCount: newCycle % clamp(settings.longEvery, 2, 12),
+        phase: np,
+        running: false,
+        endTs: null,
+        remainingMs: phaseDurationMs(np),
+      }));
+    } else {
+      await notify("Break over", "Back to focus mode.");
+      setState((s) => ({
+        ...s,
+        phase: "work",
+        running: false,
+        endTs: null,
+        remainingMs: phaseDurationMs("work"),
+      }));
+    }
+  };
+
+  // UI helpers
+  const totalMs = phaseDurationMs(state.phase);
+  const progress = 1 - state.remainingMs / Math.max(1, totalMs);
+  const minutes = Math.floor(state.remainingMs / 60000);
+  const seconds = Math.floor((state.remainingMs % 60000) / 1000);
+
+  const handleUpdate = (key, value) => {
+    setSettings((s) => ({ ...s, [key]: value }));
+    // If changing active phase length, reflect remaining
+    setState((st) => {
+      const ms = phaseDurationMs(st.phase === "work" ? "work" : st.phase);
+      return { ...st, remainingMs: st.phase === "work" ? settings.workMin * 60000 : st.remainingMs };
+    });
+  };
+
+  const applyNewDurations = () => {
+    // Reset current phase to its new duration when user clicks apply
+    setState((s) => ({
+      ...s,
+      running: false,
+      endTs: null,
+      remainingMs: phaseDurationMs(s.phase),
+    }));
+  };
+
+  // Styles
+  const phaseColor = state.phase === "work" ? "from-rose-500 to-pink-500" : state.phase === "short" ? "from-emerald-500 to-teal-500" : "from-indigo-500 to-violet-500";
+
+  return (
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">番茄鐘 Pomodoro</h1>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-xl text-sm bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+              onClick={() => setSettings((s) => ({ ...s, dark: !s.dark }))}
+              aria-label="Toggle theme"
+            >
+              {settings.dark ? "☾ 暗色" : "☀ 亮色"}
+            </button>
+          </div>
+        </div>
+
+        {/* Main Card */}
+        <div className="grid md:grid-cols-2 gap-6 items-start">
+          <div className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur rounded-2xl shadow p-6">
+            <PhaseTabs phase={state.phase} onPick={(p) => startPhase(p)} />
+
+            <div className="flex flex-col items-center gap-6 pt-4">
+              <ProgressRing progress={progress} label={`${pad(minutes)}:${pad(seconds)}`} phase={state.phase} />
+
+              <div className="flex gap-3 flex-wrap justify-center">
+                {!state.running ? (
+                  <button
+                    onClick={() => (state.endTs ? resume() : startPhase(state.phase))}
+                    className="px-5 py-2.5 rounded-2xl shadow bg-gradient-to-tr text-white font-medium hover:opacity-95 active:scale-[.99] transition-all "
+                    style={{ backgroundImage: undefined }}
+                  >
+                    ▶ 開始
+                  </button>
+                ) : (
+                  <button
+                    onClick={pause}
+                    className="px-5 py-2.5 rounded-2xl shadow bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    ⏸ 暫停
+                  </button>
+                )}
+
+                <button
+                  onClick={reset}
+                  className="px-5 py-2.5 rounded-2xl shadow bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  ⟲ 重設
+                </button>
+
+                <button
+                  onClick={skip}
+                  className="px-5 py-2.5 rounded-2xl shadow bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  ⤼ 跳過
+                </button>
+              </div>
+
+              <div className="text-sm text-neutral-600 dark:text-neutral-400">
+                已完成專注：<span className="font-medium text-neutral-900 dark:text-neutral-100">{state.completedWorkSessions}</span> 次
+              </div>
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="bg-white/70 dark:bg-neutral-900/70 backdrop-blur rounded-2xl shadow p-6">
+            <h2 className="text-lg font-semibold mb-4">設定</h2>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <NumberField
+                label="專注 (分)"
+                value={settings.workMin}
+                min={1}
+                max={120}
+                onChange={(v) => setSettings((s) => ({ ...s, workMin: clamp(v, 1, 120) }))}
+              />
+              <NumberField
+                label="短休息 (分)"
+                value={settings.shortMin}
+                min={1}
+                max={60}
+                onChange={(v) => setSettings((s) => ({ ...s, shortMin: clamp(v, 1, 60) }))}
+              />
+              <NumberField
+                label="長休息 (分)"
+                value={settings.longMin}
+                min={5}
+                max={90}
+                onChange={(v) => setSettings((s) => ({ ...s, longMin: clamp(v, 5, 90) }))}
+              />
+              <NumberField
+                label="每幾輪長休息"
+                value={settings.longEvery}
+                min={2}
+                max={12}
+                onChange={(v) => setSettings((s) => ({ ...s, longEvery: clamp(v, 2, 12) }))}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 mb-4">
+              <Toggle
+                checked={settings.sound}
+                onChange={(c) => setSettings((s) => ({ ...s, sound: c }))}
+                label="結束音效"
+              />
+              <Toggle
+                checked={settings.notify}
+                onChange={async (c) => {
+                  if (c && "Notification" in window) {
+                    try { await Notification.requestPermission(); } catch {}
+                  }
+                  setSettings((s) => ({ ...s, notify: c }));
+                }}
+                label="桌面通知"
+              />
+            </div>
+
+            <button
+              onClick={applyNewDurations}
+              className="w-full mt-2 px-4 py-2 rounded-xl bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700"
+            >
+              套用新時間到目前階段
+            </button>
+
+            <div className="mt-6 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              ⌨️ 快捷鍵：<b>Space</b> 開始/暫停、<b>R</b> 重設、<b>S</b> 跳過。
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-6 text-center text-xs text-neutral-500 dark:text-neutral-400">
+          Made with focus • 本地儲存設定，不會上傳任何資料。
+        </div>
+      </div>
+
+      <GlobalShortcuts onSpace={() => (state.running ? pause() : state.endTs ? resume() : startPhase(state.phase))} onR={reset} onS={skip} />
+
+      <style>{`
+        .btn-grad {
+          background-image: linear-gradient(135deg, #ec4899 0%, #ef4444 100%);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function PhaseTabs({ phase, onPick }) {
+  const tabs = [
+    { id: "work", label: "專注" },
+    { id: "short", label: "短休息" },
+    { id: "long", label: "長休息" },
+  ];
+  return (
+    <div className="inline-flex rounded-2xl bg-neutral-200/80 dark:bg-neutral-800/80 p-1">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onPick(t.id)}
+          className={
+            "px-4 py-2 rounded-2xl text-sm font-medium transition-all " +
+            (phase === t.id
+              ? "bg-white dark:bg-neutral-900 shadow"
+              : "opacity-70 hover:opacity-100")
+          }
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange, min = 0, max = 999 }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-neutral-600 dark:text-neutral-400">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(clamp(parseInt(e.target.value || "0", 10), min, max))}
+        className="px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-700/60 focus:outline-none focus:ring-2 focus:ring-neutral-400/40"
+      />
+    </label>
+  );
+}
+
+function Toggle({ checked, onChange, label }) {
+  return (
+    <label className="flex items-center gap-2 select-none cursor-pointer">
+      <span className="relative inline-flex h-6 w-10 items-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span className="h-6 w-10 rounded-full bg-neutral-300 dark:bg-neutral-700 peer-checked:bg-neutral-900 dark:peer-checked:bg-white transition-colors" />
+        <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white dark:bg-neutral-900 peer-checked:translate-x-4 transition-transform shadow" />
+      </span>
+      <span className="text-sm">{label}</span>
+    </label>
+  );
+}
+
+function ProgressRing({ progress, label, phase }) {
+  const size = 220;
+  const stroke = 12;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const dash = c * clamp(progress, 0, 1);
+  const color = phase === "work" ? "#ef4444" : phase === "short" ? "#10b981" : "#8b5cf6";
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} strokeWidth={stroke} stroke="currentColor" className="text-neutral-200 dark:text-neutral-800" fill="none" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          strokeWidth={stroke}
+          stroke={color}
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c}`}
+          fill="none"
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="text-5xl font-semibold tabular-nums">{label}</div>
+        <div className="absolute bottom-7 text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          {phase === "work" ? "FOCUS" : phase === "short" ? "BREAK" : "LONG BREAK"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GlobalShortcuts({ onSpace, onR, onS }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target instanceof HTMLInputElement) return; // avoid when typing
+      if (e.code === "Space") { e.preventDefault(); onSpace(); }
+      if (e.key.toLowerCase() === "r") { e.preventDefault(); onR(); }
+      if (e.key.toLowerCase() === "s") { e.preventDefault(); onS(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onSpace, onR, onS]);
+  return null;
+}
