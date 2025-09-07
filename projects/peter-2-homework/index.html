@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍔 簡單記帳本（含分類）</title>
+<style>
+  body {
+    font-family: "Microsoft JhengHei", sans-serif;
+    background: #fdf6ec;
+    text-align: center;
+    margin: 0;
+    padding: 1rem;
+  }
+  h1 { margin: 1rem 0; }
+
+  /* 漢堡結構 */
+  .burger {
+    max-width: 420px;
+    margin: auto;
+  }
+  .bun-top, .bun-bottom {
+    background: #f4a261;
+    border-radius: 50%;
+    height: 60px;
+    margin: 0 auto;
+    width: 90%;
+  }
+  .bun-top { border-bottom-left-radius: 60px; border-bottom-right-radius: 60px; }
+  .bun-bottom { border-top-left-radius: 60px; border-top-right-radius: 60px; height: 50px; }
+
+  .patty {
+    background: #6a4e42;
+    margin: 0.5rem auto;
+    padding: 1rem;
+    border-radius: 15px;
+    color: white;
+  }
+  .cheese {
+    background: #fcd34d;
+    margin: 0.5rem auto;
+    padding: 0.5rem;
+    border-radius: 10px;
+  }
+  .lettuce {
+    background: #81c784;
+    margin: 0.5rem auto;
+    padding: 0.5rem;
+    border-radius: 10px;
+  }
+
+  input, select, button {
+    padding: 0.5rem;
+    margin: 0.2rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+  }
+  button {
+    background: #2a9d8f;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  button:hover { background: #21867a; }
+  ul { list-style: none; padding: 0; margin: 0.5rem 0; }
+  li { padding: 0.3rem; border-bottom: 1px dashed #eee; font-size: 0.9rem; }
+  .category-total {
+    font-size: 0.85rem;
+    margin: 0.2rem 0;
+  }
+</style>
+</head>
+<body>
+  <h1>🍔 簡單記帳本</h1>
+  <div class="burger">
+    <div class="bun-top"></div>
+
+    <!-- 輸入區 (生菜層) -->
+    <div class="lettuce">
+      <input type="text" id="item" placeholder="項目">
+      <input type="number" id="amount" placeholder="金額">
+      <select id="category">
+        <option value="餐飲">餐飲</option>
+        <option value="交通">交通</option>
+        <option value="娛樂">娛樂</option>
+        <option value="其他">其他</option>
+      </select>
+      <button onclick="addExpense()">新增</button>
+    </div>
+
+    <!-- 紀錄清單 (起司層) -->
+    <div class="cheese">
+      <h3>紀錄</h3>
+      <ul id="list"></ul>
+    </div>
+
+    <!-- 累計顯示 (肉排層) -->
+    <div class="patty">
+      <h3>累計</h3>
+      <p>今日：<span id="dailyTotal">0</span></p>
+      <p>本周：<span id="weeklyTotal">0</span></p>
+      <p>本月：<span id="monthlyTotal">0</span></p>
+      <h4>分類小計</h4>
+      <div id="categoryTotals"></div>
+    </div>
+
+    <div class="bun-bottom"></div>
+  </div>
+
+<script>
+  let expenses = JSON.parse(localStorage.getItem("expenses_with_category") || "[]");
+
+  function addExpense() {
+    const item = document.getElementById("item").value.trim();
+    const amount = parseFloat(document.getElementById("amount").value);
+    const category = document.getElementById("category").value;
+    if (!item || isNaN(amount)) return alert("請輸入完整資訊");
+    const date = new Date().toISOString();
+    expenses.push({ item, amount, category, date });
+    localStorage.setItem("expenses_with_category", JSON.stringify(expenses));
+    document.getElementById("item").value = "";
+    document.getElementById("amount").value = "";
+    render();
+  }
+
+  function render() {
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+    let daily = 0, weekly = 0, monthly = 0;
+    let categoryTotals = { "餐飲": 0, "交通": 0, "娛樂": 0, "其他": 0 };
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0,10);
+    const startOfWeek = new Date(now); 
+    startOfWeek.setDate(now.getDate() - now.getDay() + 1); // 週一
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    expenses.forEach(e => {
+      const d = new Date(e.date);
+      const li = document.createElement("li");
+      li.textContent = `${d.toLocaleDateString()} - [${e.category}] ${e.item}: $${e.amount}`;
+      list.appendChild(li);
+
+      if (e.date.slice(0,10) === todayStr) daily += e.amount;
+      if (d >= startOfWeek) weekly += e.amount;
+      if (d >= startOfMonth) monthly += e.amount;
+
+      categoryTotals[e.category] += e.amount;
+    });
+
+    document.getElementById("dailyTotal").textContent = daily;
+    document.getElementById("weeklyTotal").textContent = weekly;
+    document.getElementById("monthlyTotal").textContent = monthly;
+
+    const catDiv = document.getElementById("categoryTotals");
+    catDiv.innerHTML = "";
+    Object.keys(categoryTotals).forEach(cat => {
+      const p = document.createElement("p");
+      p.className = "category-total";
+      p.textContent = `${cat}: $${categoryTotals[cat]}`;
+      catDiv.appendChild(p);
+    });
+  }
+
+  render();
+</script>
+</body>
+</html>
