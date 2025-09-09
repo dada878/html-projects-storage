@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>番茄鐘</title>
+  <style>
+    :root {
+      --bg-1: #0b0d12;
+      --bg-2: #121621;
+      --panel: #161a25;
+      --text: #e8ecf1;
+      --muted: #a6adbb;
+      --ring-bg: rgba(255,255,255,0.08);
+      --accent: #f59f0b; /* default work warm */
+      --accent-2: #ef4444; /* warm darker */
+      --glow: 0 0 32px rgba(245, 159, 11, 0.35);
+    }
+
+    body.break {
+      --accent: #22d3ee; /* cool */
+      --accent-2: #3b82f6;
+      --glow: 0 0 32px rgba(34, 211, 238, 0.35);
+    }
+
+    /* Gradient dark background */
+    body {
+      margin: 0;
+      min-height: 100svh;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 800px at 10% 10%, rgba(255,255,255,0.06), transparent 60%),
+        radial-gradient(1000px 700px at 90% 20%, rgba(255,255,255,0.04), transparent 60%),
+        linear-gradient(160deg, var(--bg-1), var(--bg-2));
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 520px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35), var(--glow);
+      padding: 18px;
+      backdrop-filter: blur(6px);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 14px;
+      letter-spacing: .2px;
+    }
+    .mode-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,255,255,0.06);
+    }
+
+    .counter {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .ring {
+      position: relative;
+      display: grid;
+      place-items: center;
+      margin: 20px auto 10px;
+      width: 78vw; max-width: 360px; aspect-ratio: 1 / 1;
+    }
+    .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring .time {
+      position: absolute;
+      text-align: center;
+      line-height: 1;
+    }
+    .time .big {
+      font-size: clamp(36px, 12vw, 72px);
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .time .small { font-size: 14px; color: var(--muted); margin-top: 6px; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .controls .row {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform .08s ease, background .2s ease, border-color .2s ease;
+    }
+    button:hover { transform: translateY(-1px); background: rgba(255,255,255,0.1); }
+    button:active { transform: translateY(0); }
+
+    .primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-2));
+      color: #0b0d12;
+      font-weight: 700;
+      border: none;
+      box-shadow: 0 6px 18px rgba(0,0,0,.25), 0 0 0 3px rgba(255,255,255,0.06) inset;
+    }
+    .primary:hover { filter: brightness(1.05); }
+
+    .ghost { background: rgba(255,255,255,0.04); }
+
+    .footer {
+      margin-top: 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      font-size: 14px; color: var(--muted);
+    }
+
+    /* Settings dialog */
+    dialog::backdrop { background: rgba(0,0,0,0.6); }
+    dialog {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(180deg, #151925, #0f121b);
+      color: var(--text);
+      border-radius: 16px;
+      padding: 16px;
+      max-width: 420px; width: calc(100vw - 40px);
+    }
+    .dialog-title { font-weight: 700; margin: 0 0 10px; }
+    .field { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin: 10px 0; }
+    .field label { font-size: 14px; color: var(--muted); }
+    .field input {
+      width: 90px; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.06); color: var(--text); font-size: 16px; text-align: right;
+    }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+
+    @media (min-width: 640px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body class="work">
+  <main class="app" role="application" aria-label="番茄鐘">
+    <header class="header">
+      <div class="mode-badge" id="modeBadge" aria-live="polite">
+        <span class="mode-dot"></span>
+        <span id="modeLabel">工作中</span>
+      </div>
+      <div class="counter">已完成番茄：<strong id="pomCount">0</strong></div>
+    </header>
+
+    <section class="ring" aria-label="倒數計時">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ring-bg)" stroke-width="12" />
+        <circle id="progress" cx="60" cy="60" r="52" fill="none" stroke="url(#grad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="326.725635973" stroke-dashoffset="0" />
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="var(--accent)"/>
+            <stop offset="100%" stop-color="var(--accent-2)"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="time" aria-live="polite">
+        <div class="big" id="time">25:00</div>
+        <div class="small" id="subLabel">專注 25 分鐘</div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="控制">
+      <button id="startPause" class="primary" aria-pressed="false">開始</button>
+      <button id="reset" class="ghost">重置</button>
+      <div class="row">
+        <button id="toggleMode" title="切換工作/休息">切換模式</button>
+        <button id="settingsBtn">設定</button>
+        <button id="minus1">-1 分</button>
+        <button id="plus1">+1 分</button>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span id="statusText">準備就緒</span>
+      <span>模式：<strong id="modeShort">工作</strong></span>
+    </footer>
+  </main>
+
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+    <form method="dialog" id="settingsForm">
+      <h3 class="dialog-title" id="settingsTitle">設定</h3>
+      <div class="field">
+        <label for="workMins">工作時間（分鐘）</label>
+        <input id="workMins" type="number" min="1" max="180" value="25" />
+      </div>
+      <div class="field">
+        <label for="breakMins">休息時間（分鐘）</label>
+        <input id="breakMins" type="number" min="1" max="60" value="5" />
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel">取消</button>
+        <button class="primary" id="saveSettings" value="default">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (function(){
+      const pad = (n)=> String(n).padStart(2,'0');
+      const $ = (id)=> document.getElementById(id);
+      const timeEl = $("time");
+      const subLabel = $("subLabel");
+      const startPauseBtn = $("startPause");
+      const resetBtn = $("reset");
+      const toggleBtn = $("toggleMode");
+      const settingsBtn = $("settingsBtn");
+      const settingsDialog = $("settingsDialog");
+      const workInput = $("workMins");
+      const breakInput = $("breakMins");
+      const progress = $("progress");
+      const pomCountEl = $("pomCount");
+      const statusText = $("statusText");
+      const modeShort = $("modeShort");
+      const modeLabel = $("modeLabel");
+      const minus1 = $("minus1");
+      const plus1 = $("plus1");
+
+      const CIRC = 2 * Math.PI * 52; // r=52
+      progress.setAttribute('stroke-dasharray', CIRC.toString());
+
+      const STATE = {
+        mode: 'work', // 'work' | 'break'
+        durations: { work: 25*60, break: 5*60 },
+        remaining: 25*60,
+        running: false,
+        intervalId: null,
+        pomodoros: 0,
+      };
+
+      function updateBodyTheme(){
+        document.body.classList.toggle('break', STATE.mode === 'break');
+        document.body.classList.toggle('work', STATE.mode === 'work');
+      }
+
+      function fmt(sec){
+        const m = Math.floor(sec/60);
+        const s = sec % 60;
+        return `${pad(m)}:${pad(s)}`;
+      }
+
+      function updateTitle(){
+        const modeLabel = STATE.mode === 'work' ? '工作' : '休息';
+        document.title = `${fmt(STATE.remaining)} — ${modeLabel}`;
+      }
+
+      function render(){
+        timeEl.textContent = fmt(STATE.remaining);
+        const modeTxt = STATE.mode === 'work' ? '工作中' : '休息中';
+        const sub = STATE.mode === 'work' ? `專注 ${Math.round(STATE.durations.work/60)} 分鐘` : `放鬆 ${Math.round(STATE.durations.break/60)} 分鐘`;
+        subLabel.textContent = sub;
+        modeShort.textContent = STATE.mode === 'work' ? '工作' : '休息';
+        modeLabel.textContent = modeTxt;
+        pomCountEl.textContent = STATE.pomodoros;
+        startPauseBtn.textContent = STATE.running ? '暫停' : '開始';
+        startPauseBtn.setAttribute('aria-pressed', STATE.running ? 'true' : 'false');
+
+        const frac = STATE.remaining / STATE.durations[STATE.mode];
+        const offset = CIRC * (1 - frac);
+        progress.style.transition = STATE.running ? 'stroke-dashoffset 1s linear' : 'stroke-dashoffset .2s ease';
+        progress.style.strokeDashoffset = String(offset);
+
+        updateTitle();
+        updateBodyTheme();
+      }
+
+      function tick(){
+        if (!STATE.running) return;
+        if (STATE.remaining > 0){
+          STATE.remaining -= 1;
+          render();
+        } else {
+          // Session completed
+          if (STATE.mode === 'work') {
+            STATE.pomodoros += 1;
+          }
+          // Auto-switch mode and start next session
+          STATE.mode = STATE.mode === 'work' ? 'break' : 'work';
+          STATE.remaining = STATE.durations[STATE.mode];
+          announce(`${STATE.mode === 'work' ? '開始工作' : '開始休息'}`);
+          flash();
+          render();
+        }
+      }
+
+      function start(){ if (!STATE.running){ STATE.running = true; render(); } }
+      function pause(){ if (STATE.running){ STATE.running = false; render(); } }
+      function reset(){ STATE.remaining = STATE.durations[STATE.mode]; pause(); render(); }
+      function toggleMode(){
+        const wasRunning = STATE.running;
+        pause();
+        STATE.mode = STATE.mode === 'work' ? 'break' : 'work';
+        STATE.remaining = STATE.durations[STATE.mode];
+        if (wasRunning) start();
+        render();
+      }
+
+      function saveSettings(){
+        const w = Math.max(1, Math.min(180, parseInt(workInput.value || '25', 10)));
+        const b = Math.max(1, Math.min(60, parseInt(breakInput.value || '5', 10)));
+        STATE.durations.work = w * 60;
+        STATE.durations.break = b * 60;
+        // Reset current session to reflect new duration
+        STATE.remaining = STATE.durations[STATE.mode];
+        pause();
+        render();
+      }
+
+      function announce(msg){ statusText.textContent = msg; }
+
+      function flash(){
+        const el = document.querySelector('.app');
+        el.animate([
+          { boxShadow: getComputedStyle(el).boxShadow },
+          { boxShadow: '0 0 0 rgba(0,0,0,0)' },
+          { boxShadow: getComputedStyle(el).boxShadow }
+        ], { duration: 600, easing: 'ease-out' });
+      }
+
+      // Quick adjust +/- 1 minute
+      minus1.addEventListener('click', ()=>{
+        STATE.remaining = Math.max(0, STATE.remaining - 60);
+        render();
+      });
+      plus1.addEventListener('click', ()=>{
+        STATE.remaining = Math.min(STATE.durations[STATE.mode], STATE.remaining + 60);
+        render();
+      });
+
+      startPauseBtn.addEventListener('click', ()=>{
+        if (STATE.running) pause(); else start();
+      });
+
+      resetBtn.addEventListener('click', reset);
+      toggleBtn.addEventListener('click', toggleMode);
+
+      // settings dialog
+      settingsBtn.addEventListener('click', ()=>{
+        workInput.value = Math.round(STATE.durations.work/60);
+        breakInput.value = Math.round(STATE.durations.break/60);
+        if (typeof settingsDialog.showModal === 'function') settingsDialog.showModal();
+        else alert('此瀏覽器不支援對話框，請更新瀏覽器。');
+      });
+
+      $("saveSettings").addEventListener('click', (e)=>{
+        e.preventDefault();
+        saveSettings();
+        settingsDialog.close();
+      });
+
+      // Timer loop
+      STATE.intervalId = setInterval(tick, 1000);
+      render();
+    })();
+  </script>
+</body>
+</html>
