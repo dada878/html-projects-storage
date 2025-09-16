@@ -1,0 +1,298 @@
+(function(){
+  // ===== Utilities =====
+  const $ = sel => document.querySelector(sel);
+  const pad = n => n.toString().padStart(2, '0');
+
+  // Ring math
+  const R = 54;
+  const CIRC = 2 * Math.PI * R;
+  const ring = document.querySelector('.svg-ring .fg');
+
+  // State
+  const defaultSettings = {
+    focusMin: 25,
+    shortMin: 5,
+    longMin: 15,
+    roundsToLong: 4,
+    autoStartNext: false,
+    enableSound: true,
+    enableNotify: false,
+    tickTock: false
+  };
+
+  let settings = loadSettings();
+  function loadSettings(){
+    try {
+      const s = JSON.parse(localStorage.getItem('pomodoroSettingsV1'));
+      return Object.assign({}, defaultSettings, s || {});
+    } catch { return {...defaultSettings}; }
+  }
+  function saveSettings(){
+    localStorage.setItem('pomodoroSettingsV1', JSON.stringify(settings));
+  }
+
+  const phaseEnum = { Focus:'focus', Short:'short', Long:'long' };
+  let phase = phaseEnum.Focus;
+  let remaining = settings.focusMin * 60; // seconds
+  let total = remaining;
+  let isRunning = false;
+  let timerId = null;
+  let completedInCycle = 0; // completed focus sessions in current cycle
+
+  // Elements
+  const timeEl = $('#time');
+  const startPauseBtn = $('#start-pause');
+  const resetBtn = $('#reset');
+  const skipBtn = $('#skip');
+  const phaseLabel = $('#phase-label');
+  const roundsEl = $('#rounds');
+
+  const dlg = $('#settings');
+  const openSettings = $('#open-settings');
+  const saveBtn = $('#save-settings');
+  const inputs = {
+    focusMin: $('#focusMin'),
+    shortMin: $('#shortMin'),
+    longMin: $('#longMin'),
+    roundsToLong: $('#roundsToLong'),
+    autoStartNext: $('#autoStartNext'),
+    enableSound: $('#enableSound'),
+    enableNotify: $('#enableNotify'),
+    tickTock: $('#tickTock'),
+  };
+
+  // ===== Initialization =====
+  function init(){
+    // set inputs
+    inputs.focusMin.value = settings.focusMin;
+    inputs.shortMin.value = settings.shortMin;
+    inputs.longMin.value = settings.longMin;
+    inputs.roundsToLong.value = settings.roundsToLong;
+    inputs.autoStartNext.checked = settings.autoStartNext;
+    inputs.enableSound.checked = settings.enableSound;
+    inputs.enableNotify.checked = settings.enableNotify;
+    inputs.tickTock.checked = settings.tickTock;
+
+    // rounds dots
+    renderRounds();
+
+    // initial UI
+    updateTimeUI();
+    updateRing();
+    updatePhaseUI();
+
+    // Notification permission preflight
+    if (settings.enableNotify && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(()=>{});
+    }
+  }
+
+  function renderRounds(){
+    roundsEl.innerHTML = '';
+    for (let i=0; i<settings.roundsToLong; i++){
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < completedInCycle ? ' done' : '');
+      roundsEl.appendChild(d);
+    }
+  }
+
+  function updateTimeUI(){
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    timeEl.textContent = `${pad(m)}:${pad(s)}`;
+    document.title = `${pad(m)}:${pad(s)} â¢ ${phaseTitle()} â çªèé`;
+  }
+
+  function updateRing(){
+    const progressed = 1 - (remaining / total);
+    const offset = CIRC * progressed;
+    ring.style.strokeDasharray = CIRC.toFixed(3);
+    ring.style.strokeDashoffset = offset.toFixed(3);
+  }
+
+  function phaseTitle(){
+    return phase === 'focus' ? 'å°æ³¨' : phase === 'short' ? 'ç­ä¼æ¯' : 'é·ä¼æ¯';
+  }
+
+  function updatePhaseUI(){
+    phaseLabel.textContent = phaseTitle();
+    // badge color swap
+    phaseLabel.style.background = phase === 'focus' ? '#0ea5e9' : (phase === 'short' ? '#22c55e' : '#f59e0b');
+  }
+
+  // ===== Timer engine =====
+  function tick(){
+    if (!isRunning) return;
+    if (remaining > 0){
+      remaining -= 1;
+      updateTimeUI();
+      updateRing();
+      if (settings.tickTock && phase === 'focus') playTick();
+    } else {
+      // done
+      stop();
+      onPhaseComplete();
+    }
+  }
+
+  function start(){
+    if (isRunning) return;
+    isRunning = true;
+    startPauseBtn.textContent = 'æ«å';
+    timerId = setInterval(tick, 1000);
+  }
+
+  function stop(){
+    if (!isRunning) return;
+    clearInterval(timerId);
+    isRunning = false;
+    startPauseBtn.textContent = 'éå§';
+  }
+
+  function reset(){
+    stop();
+    if (phase === 'focus') {
+      remaining = settings.focusMin * 60;
+      total = remaining;
+    } else if (phase === 'short') {
+      remaining = settings.shortMin * 60;
+      total = remaining;
+    } else {
+      remaining = settings.longMin * 60;
+      total = remaining;
+    }
+    updateTimeUI();
+    updateRing();
+  }
+
+  function skip(){
+    stop();
+    onPhaseComplete(true);
+  }
+
+  function onPhaseComplete(bySkip=false){
+    // emit sound & notify (if not by manual skip, still polite to sound once)
+    if (settings.enableSound) playDing();
+    if (settings.enableNotify) notifyPhaseChange();
+
+    // switch phase
+    if (phase === 'focus'){
+      completedInCycle += 1;
+      renderRounds();
+      if (completedInCycle >= settings.roundsToLong){
+        // long break
+        phase = phaseEnum.Long;
+        completedInCycle = 0; // reset cycle
+        renderRounds();
+        remaining = settings.longMin * 60;
+      } else {
+        // short break
+        phase = phaseEnum.Short;
+        remaining = settings.shortMin * 60;
+      }
+    } else {
+      // any break -> back to focus
+      phase = phaseEnum.Focus;
+      remaining = settings.focusMin * 60;
+    }
+    total = remaining;
+    updatePhaseUI();
+    updateTimeUI();
+    updateRing();
+
+    // auto start next?
+    if (settings.autoStartNext && !bySkip) start();
+  }
+
+  // ===== Sounds (WebAudio) =====
+  let audioCtx;
+  function getCtx(){
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+  function tone(freq=880, dur=0.12, type='sine', vol=0.2){
+    const ctx = getCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    o.connect(g);
+    g.connect(ctx.destination);
+    g.gain.value = vol;
+    o.start();
+    o.stop(ctx.currentTime + dur);
+  }
+  function playDing(){
+    // simple two-note ding
+    tone(880, .10, 'sine', .15);
+    setTimeout(()=>tone(1320, .12, 'sine', .12), 130);
+  }
+  function playTick(){
+    tone(440, .02, 'square', .04);
+  }
+
+  // ===== Notifications =====
+  function notifyPhaseChange(){
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default'){
+      Notification.requestPermission().then(p => {
+        if (p === 'granted') doNotify();
+      }).catch(()=>{});
+    } else if (Notification.permission === 'granted'){
+      doNotify();
+    }
+    function doNotify(){
+      const text = phase === 'focus' ? 'éå§å°æ³¨ï¼' : (phase === 'short' ? 'ç­ä¼æ¯æéå°ï½' : 'é·ä¼æ¯éå§ï¼');
+      new Notification('çªèéæé', { body: text, silent: !settings.enableSound });
+    }
+  }
+
+  // ===== Events =====
+  startPauseBtn.addEventListener('click', () => isRunning ? stop() : start());
+  resetBtn.addEventListener('click', reset);
+  skipBtn.addEventListener('click', skip);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' '){
+      e.preventDefault();
+      isRunning ? stop() : start();
+    } else if (e.key.toLowerCase() === 'r') {
+      reset();
+    } else if (e.key.toLowerCase() === 's') {
+      skip();
+    }
+  });
+
+  openSettings.addEventListener('click', () => dlg.showModal());
+  saveBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    // read values
+    settings.focusMin = clampInt(inputs.focusMin.value, 1, 180, defaultSettings.focusMin);
+    settings.shortMin = clampInt(inputs.shortMin.value, 1, 60, defaultSettings.shortMin);
+    settings.longMin = clampInt(inputs.longMin.value, 1, 120, defaultSettings.longMin);
+    settings.roundsToLong = clampInt(inputs.roundsToLong.value, 2, 12, defaultSettings.roundsToLong);
+    settings.autoStartNext = inputs.autoStartNext.checked;
+    settings.enableSound = inputs.enableSound.checked;
+    settings.enableNotify = inputs.enableNotify.checked;
+    settings.tickTock = inputs.tickTock.checked;
+    saveSettings();
+    dlg.close('ok');
+
+    // if we change durations, reset current phase's remaining/total
+    reset();
+    renderRounds();
+
+    // preflight notification permission if toggled on
+    if (settings.enableNotify && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(()=>{});
+    }
+  });
+
+  function clampInt(v, min, max, fallback){
+    v = parseInt(v, 10);
+    return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+  }
+
+  // start
+  init();
+})();
