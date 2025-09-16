@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>25:00 • 番茄鐘</title>
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #0f172a, #1e293b);
+      --text: #f1f5f9;
+      --warm: #f97316;
+      --cool: #3b82f6;
+      --card: #1e293b;
+      --muted: #94a3b8;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    .card {
+      background: var(--card);
+      border-radius: 1rem;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: 0 8px 20px rgba(0,0,0,.4);
+      max-width: 360px;
+      width: 90%;
+    }
+    .ring {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin: 0 auto 1rem;
+    }
+    .ring svg { transform: rotate(-90deg); }
+    .ring circle {
+      fill: none;
+      stroke-width: 14;
+      stroke-linecap: round;
+    }
+    .ring .bg { stroke: #334155; }
+    .ring .fg { stroke: var(--warm); transition: stroke-dashoffset 1s linear, stroke .3s ease; }
+    .time {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.5rem; font-weight: bold;
+    }
+    .buttons {
+      display: flex; flex-wrap: wrap; gap: .5rem;
+      justify-content: center;
+    }
+    button {
+      flex: 1 1 auto;
+      padding: .6rem 1rem;
+      border-radius: .6rem;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      color: white;
+      background: #475569;
+      transition: background .2s, transform .1s;
+    }
+    button:hover { background: #64748b; }
+    button:active { transform: translateY(1px); }
+    button.primary { background: var(--warm); }
+    button.primary:hover { background: #fb923c; }
+    .mode-cool .ring .fg { stroke: var(--cool); }
+    .mode-cool button.primary { background: var(--cool); }
+    .mode-cool button.primary:hover { background: #60a5fa; }
+    .count { margin-top: 1rem; color: var(--muted); font-size: .9rem; }
+    dialog {
+      border: none; border-radius: 1rem;
+      padding: 1.5rem; background: var(--card); color: var(--text);
+      max-width: 300px; width: 90%;
+    }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+    label { display: block; margin: .6rem 0 .2rem; }
+    input {
+      width: 100%; padding: .4rem .6rem; border-radius: .4rem;
+      border: 1px solid #334155; background: #0f172a; color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <h1>番茄鐘</h1>
+  <div class="card" id="app">
+    <div class="ring">
+      <svg viewBox="0 0 240 240">
+        <circle class="bg" cx="120" cy="120" r="105"/>
+        <circle class="fg" cx="120" cy="120" r="105" stroke-dasharray="659" stroke-dashoffset="0"/>
+      </svg>
+      <div class="time" id="time">25:00</div>
+    </div>
+    <div class="buttons">
+      <button id="startPause" class="primary">開始</button>
+      <button id="reset">重置</button>
+      <button id="toggleMode">切換模式</button>
+      <button id="settingsBtn">設定</button>
+    </div>
+    <div class="count">已完成番茄數：<span id="count">0</span></div>
+  </div>
+
+  <dialog id="settingsDialog">
+    <form method="dialog">
+      <h2>設定</h2>
+      <label>工作時間（分鐘）</label>
+      <input type="number" id="workInput" min="1" max="180" value="25"/>
+      <label>休息時間（分鐘）</label>
+      <input type="number" id="breakInput" min="1" max="60" value="5"/>
+      <div style="margin-top:1rem; text-align:right;">
+        <button value="cancel">取消</button>
+        <button id="saveSettings" value="default" class="primary">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const timeEl = document.getElementById('time');
+    const startBtn = document.getElementById('startPause');
+    const resetBtn = document.getElementById('reset');
+    const toggleBtn = document.getElementById('toggleMode');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const dialog = document.getElementById('settingsDialog');
+    const saveSettings = document.getElementById('saveSettings');
+    const workInput = document.getElementById('workInput');
+    const breakInput = document.getElementById('breakInput');
+    const countEl = document.getElementById('count');
+    const fgCircle = document.querySelector('.fg');
+    const app = document.getElementById('app');
+
+    let workMin = 25, breakMin = 5;
+    let isWork = true;
+    let remaining = workMin * 60;
+    let timer = null;
+    let count = 0;
+    const CIRC = 2 * Math.PI * 105;
+
+    function updateUI() {
+      const m = Math.floor(remaining/60);
+      const s = remaining%60;
+      timeEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      document.title = `${timeEl.textContent} • 番茄鐘`;
+      const total = (isWork?workMin:breakMin)*60;
+      fgCircle.setAttribute('stroke-dasharray', CIRC);
+      fgCircle.setAttribute('stroke-dashoffset', CIRC * (1 - remaining/total));
+      app.classList.toggle('mode-cool', !isWork);
+    }
+
+    function tick() {
+      if (remaining > 0) {
+        remaining--;
+        updateUI();
+      } else {
+        clearInterval(timer);
+        timer = null;
+        if (isWork) {
+          count++;
+          countEl.textContent = count;
+        }
+        isWork = !isWork;
+        remaining = (isWork?workMin:breakMin)*60;
+        updateUI();
+        start();
+      }
+    }
+
+    function start() {
+      if (!timer) {
+        timer = setInterval(tick,1000);
+        startBtn.textContent = "暫停";
+      } else {
+        clearInterval(timer);
+        timer = null;
+        startBtn.textContent = "開始";
+      }
+    }
+
+    function reset() {
+      clearInterval(timer);
+      timer = null;
+      isWork = true;
+      remaining = workMin*60;
+      updateUI();
+      startBtn.textContent = "開始";
+    }
+
+    function toggleMode() {
+      isWork = !isWork;
+      remaining = (isWork?workMin:breakMin)*60;
+      updateUI();
+    }
+
+    startBtn.onclick = start;
+    resetBtn.onclick = reset;
+    toggleBtn.onclick = toggleMode;
+    settingsBtn.onclick = () => dialog.showModal();
+    saveSettings.onclick = (e) => {
+      e.preventDefault();
+      workMin = parseInt(workInput.value)||25;
+      breakMin = parseInt(breakInput.value)||5;
+      reset();
+      dialog.close();
+    };
+
+    updateUI();
+  </script>
+</body>
+</html>
