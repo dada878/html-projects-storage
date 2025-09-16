@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>90:00 • 情侶約會 App</title>
+<style>
+  :root{
+    --bg1:#0f172a; --bg2:#1e293b;
+    --text:#e5eef9; --muted:#9fb0c8;
+    --card:#0b1224; --card-b:#1e2a45;
+    --warm:#fb923c; --warm-strong:#f97316;
+    --cool:#60a5fa; --cool-strong:#3b82f6;
+    --accent:#8b5cf6;
+    --shadow:0 12px 32px rgba(0,0,0,.35);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Noto Sans,'PingFang TC',Arial,sans-serif;
+    background: linear-gradient(135deg,var(--bg1),var(--bg2));
+    color:var(--text);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:16px}
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 10px;
+  }
+  h1{margin:0;font-size:clamp(18px,4vw,24px);letter-spacing:.02em}
+  .ghost{background:transparent;border:1px solid var(--card-b);color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--card-b);border-radius:999px;color:var(--muted);}
+  main{display:grid;gap:14px}
+  @media(min-width:860px){
+    main{grid-template-columns:1fr 1fr}
+  }
+  .card{
+    background:rgba(11,18,36,.7);
+    border:1px solid var(--card-b);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:16px;
+  }
+  .card h2{margin:0 0 10px;font-size:18px}
+  .hint{color:var(--muted);font-size:12px}
+
+  /* Timer */
+  .timer{
+    display:grid;gap:10px;place-items:center;text-align:center
+  }
+  .ring{position:relative;width:min(70vw,300px);height:min(70vw,300px)}
+  svg{width:100%;height:100%;transform:rotate(-90deg)}
+  circle{fill:none;stroke-linecap:round;stroke-width:14}
+  .bg{stroke:#253352}
+  .fg{stroke:var(--warm);transition:stroke-dashoffset .9s linear, stroke .25s ease}
+  .time{
+    position:absolute;inset:0;display:grid;place-items:center;
+    font-variant-numeric:tabular-nums;
+    font-size:clamp(36px,12vw,56px);font-weight:800;letter-spacing:.04em
+  }
+  .phase{padding:4px 10px;border-radius:999px;background:var(--warm-strong);color:#fff;font-weight:700;letter-spacing:.03em}
+  .mode-break .phase{background:var(--cool-strong)}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  button{
+    appearance:none;cursor:pointer;border:1px solid var(--card-b);
+    padding:10px 14px;border-radius:10px;font-weight:700;color:var(--text);
+    background:#15203a;transition:transform .05s ease, background .2s ease, border-color .2s ease
+  }
+  button:hover{background:#1b294a}
+  button:active{transform:translateY(1px)}
+  .primary{background:var(--warm-strong);border-color:transparent}
+  .primary:hover{filter:brightness(1.08)}
+  .mode-break .primary{background:var(--cool-strong)}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .stats{display:flex;gap:8px;align-items:center;justify-content:center;color:var(--muted)}
+  .stats strong{color:#fff}
+
+  /* Activity Roulette */
+  .list{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .tag{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--card-b);border-radius:999px;background:#111a33}
+  .tag button{padding:4px 6px;border-radius:8px}
+  input[type="text"], input[type="number"], textarea{
+    width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--card-b);
+    background:#0a1226;color:var(--text)
+  }
+  .roulettePick{
+    text-align:center;margin-top:8px;padding:10px;border-radius:10px;background:#0f1831;border:1px dashed var(--card-b);font-weight:700
+  }
+
+  /* Budget */
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border-bottom:1px solid var(--card-b);text-align:left}
+  .total{display:flex;justify-content:flex-end;color:var(--muted);gap:8px}
+  .total strong{color:#fff}
+
+  /* Dialog */
+  dialog{
+    border:none;padding:0;border-radius:16px;background:#0c142b;color:var(--text);max-width:420px;width:92%;
+    box-shadow:var(--shadow)
+  }
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .dlg{padding:16px}
+  .dlg h3{margin:0 0 8px}
+  .dlg .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dlg menu{display:flex;gap:8px;justify-content:flex-end;margin:8px 0 0}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>情侶約會 App</h1>
+      <div class="row">
+        <span class="chip">已完成約會番茄：<strong id="doneCount">0</strong></span>
+        <button id="openSettings" class="ghost">⚙️ 設定</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Timer Card -->
+      <section class="card timer" id="timerCard">
+        <div class="phase" id="phaseBadge">約會進行中</div>
+        <div class="ring" id="ringWrap">
+          <svg viewBox="0 0 240 240" aria-label="剩餘時間">
+            <circle class="bg" cx="120" cy="120" r="100"></circle>
+            <circle class="fg" cx="120" cy="120" r="100" stroke-dasharray="628" stroke-dashoffset="0"></circle>
+          </svg>
+          <div class="time" id="timeText">90:00</div>
+        </div>
+        <div class="controls">
+          <button id="startPause" class="primary">開始</button>
+          <button id="reset">重設</button>
+          <button id="toggleMode" title="切換 約會/中場休息">切換模式</button>
+        </div>
+        <div class="stats">
+          <span>模式：</span><strong id="modeLabel">約會</strong>
+          <span>｜本輪目標：</span><strong id="goalLabel">一起開心就好</strong>
+        </div>
+        <p class="hint">提示：切 App 時 iOS 可能暫停計時；回來會自動補齊。標籤頁會顯示剩餘時間。</p>
+      </section>
+
+      <!-- Activity & Decisions -->
+      <section class="card">
+        <h2>🎡 活動轉盤 & 小決策器</h2>
+        <div class="row">
+          <input id="activityInput" type="text" placeholder="輸入活動（例：散步、吃燒肉、密室逃脫）" />
+          <button id="addActivity" class="ghost">新增活動</button>
+          <button id="spin" class="primary">轉一下</button>
+        </div>
+        <div class="list" id="activityList"></div>
+        <div class="roulettePick" id="roulettePick">按「轉一下」幫你們決定今晚要做什麼 💘</div>
+
+        <hr style="border:0;border-top:1px solid var(--card-b);margin:12px 0" />
+
+        <div class="row">
+          <input id="optA" type="text" placeholder="選項 A（例：電影）" />
+          <input id="optB" type="text" placeholder="選項 B（例：桌遊）" />
+          <button id="decide" class="primary">這或那？</button>
+          <button id="coin" class="ghost">擲硬幣</button>
+        </div>
+        <div class="roulettePick" id="decisionResult">需要一點命運？交給我。</div>
+      </section>
+
+      <!-- Budget & Notes -->
+      <section class="card">
+        <h2>💸 預算小記</h2>
+        <div class="row">
+          <input id="itemName" type="text" placeholder="項目（例：晚餐）" />
+          <input id="itemCost" type="number" inputmode="decimal" placeholder="金額" />
+          <button id="addCost" class="primary">加入</button>
+        </div>
+        <table>
+          <thead><tr><th>項目</th><th>金額</th><th></th></tr></thead>
+          <tbody id="costBody"></tbody>
+        </table>
+        <div class="total">合計：<strong id="totalCost">0</strong></div>
+
+        <h2 style="margin-top:14px">📝 備忘 & 心情</h2>
+        <textarea id="notes" rows="4" placeholder="想去哪、聊了什麼、下一次想做的事…"></textarea>
+      </section>
+    </main>
+  </div>
+
+  <!-- Settings Dialog -->
+  <dialog id="settings">
+    <div class="dlg">
+      <h3>設定</h3>
+      <div class="grid">
+        <div>
+          <label for="dateMin">約會時間（分鐘）</label>
+          <input id="dateMin" type="number" min="5" max="300" value="90" />
+        </div>
+        <div>
+          <label for="breakMin">中場休息（分鐘）</label>
+          <input id="breakMin" type="number" min="1" max="60" value="15" />
+        </div>
+      </div>
+      <label style="display:block;margin-top:10px">本輪目標</label>
+      <input id="goal" type="text" placeholder="例如：彼此分享這週一件開心的事" />
+      <menu>
+        <button value="cancel" class="ghost">取消</button>
+        <button id="saveSettings" class="primary" value="default">儲存</button>
+      </menu>
+      <p class="hint">設定會儲存在本機。重新整理也不會不見。</p>
+    </div>
+  </dialog>
+
+<script>
+(function(){
+  // ===== Helpers =====
+  const $ = sel => document.querySelector(sel);
+  const pad = n => String(n).padStart(2,'0');
+  const nowSec = () => Math.floor(Date.now()/1000);
+
+  // ===== Elements =====
+  const phaseBadge = $('#phaseBadge');
+  const timeText = $('#timeText');
+  const fg = document.querySelector('.fg');
+  const startBtn = $('#startPause');
+  const resetBtn = $('#reset');
+  const toggleBtn = $('#toggleMode');
+  const modeLabel = $('#modeLabel');
+  const goalLabel = $('#goalLabel');
+  const doneCountEl = $('#doneCount');
+
+  const openSettings = $('#openSettings');
+  const dlg = $('#settings');
+  const dateMinInput = $('#dateMin');
+  const breakMinInput = $('#breakMin');
+  const goalInput = $('#goal');
+  const saveBtn = $('#saveSettings');
+
+  // Activity / decisions
+  const activityInput = $('#activityInput');
+  const addActivityBtn = $('#addActivity');
+  const spinBtn = $('#spin');
+  const activityListEl = $('#activityList');
+  const roulettePick = $('#roulettePick');
+
+  const optA = $('#optA'); const optB = $('#optB');
+  const decideBtn = $('#decide'); const coinBtn = $('#coin');
+  const decisionResult = $('#decisionResult');
+
+  // Budget / notes
+  const itemName = $('#itemName'); const itemCost = $('#itemCost');
+  const addCostBtn = $('#addCost'); const costBody = $('#costBody');
+  const totalCostEl = $('#totalCost'); const notes = $('#notes');
+
+  // ===== State (with localStorage) =====
+  const R = 100, CIRC = 2*Math.PI*R;
+  const store = {
+    load(){
+      try{
+        const s = JSON.parse(localStorage.getItem('dateAppV1')) || {};
+        return Object.assign({
+          dateMin:90, breakMin:15, goal:'一起開心就好',
+          activities:['散步','咖啡廳','看電影','夜市','桌遊','一起煮晚餐'],
+          costs:[], notes:'', doneCount:0
+        }, s);
+      }catch{ return {dateMin:90, breakMin:15, goal:'一起開心就好', activities:[], costs:[], notes:'', doneCount:0}; }
+    },
+    save(){
+      localStorage.setItem('dateAppV1', JSON.stringify(state.persist()));
+    }
+  };
+  const state = {
+    // persistent
+    dateMin:90, breakMin:15, goal:'', activities:[], costs:[], notes:'', doneCount:0,
+    // session
+    isDate:true, running:false, remain:90*60, total:90*60, lastTick:nowSec(),
+    persist(){ return {dateMin:this.dateMin, breakMin:this.breakMin, goal:this.goal, activities:this.activities, costs:this.costs, notes:this.notes, doneCount:this.doneCount}; }
+  };
+
+  Object.assign(state, store.load());
+
+  // init inputs
+  dateMinInput.value = state.dateMin;
+  breakMinInput.value = state.breakMin;
+  goalInput.value = state.goal;
+  notes.value = state.notes;
+  doneCountEl.textContent = state.doneCount;
+
+  // render activities
+  function renderActivities(){
+    activityListEl.innerHTML = '';
+    state.activities.forEach((a,idx)=>{
+      const t = document.createElement('span');
+      t.className='tag';
+      t.innerHTML = `<span>${a}</span>`;
+      const rm = document.createElement('button');
+      rm.className='ghost'; rm.textContent='×';
+      rm.onclick = ()=>{ state.activities.splice(idx,1); store.save(); renderActivities(); };
+      t.appendChild(rm);
+      activityListEl.appendChild(t);
+    });
+  }
+  renderActivities();
+
+  // render costs
+  function renderCosts(){
+    costBody.innerHTML='';
+    let total = 0;
+    state.costs.forEach((c,idx)=>{
+      total += Number(c.cost)||0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHtml(c.name)}</td><td>${Number(c.cost)||0}</td>`;
+      const td = document.createElement('td');
+      const b = document.createElement('button'); b.className='ghost'; b.textContent='刪除';
+      b.onclick = ()=>{ state.costs.splice(idx,1); store.save(); renderCosts(); };
+      td.appendChild(b);
+      tr.appendChild(td);
+      costBody.appendChild(tr);
+    });
+    totalCostEl.textContent = total;
+  }
+  renderCosts();
+
+  // ===== Timer logic =====
+  function setMode(isDate){
+    state.isDate = isDate;
+    state.total = (isDate?state.dateMin:state.breakMin)*60;
+    state.remain = state.total;
+    document.body.classList.toggle('mode-break', !isDate);
+    phaseBadge.textContent = isDate ? '約會進行中' : '中場休息';
+    modeLabel.textContent = isDate ? '約會' : '休息';
+    fg.style.stroke = isDate ? 'var(--warm)' : 'var(--cool)';
+    updateUI();
+  }
+
+  function updateUI(){
+    const m = Math.floor(state.remain/60), s = state.remain%60;
+    const txt = `${pad(m)}:${pad(s)}`;
+    timeText.textContent = txt;
+    document.title = `${txt} • 情侶約會 App`;
+    fg.setAttribute('stroke-dasharray', CIRC);
+    fg.setAttribute('stroke-dashoffset', CIRC*(1 - state.remain/state.total));
+    goalLabel.textContent = state.goal || '一起開心就好';
+  }
+
+  function tick(){
+    if(!state.running) return;
+    const now = nowSec();
+    const delta = Math.max(0, now - state.lastTick);
+    state.lastTick = now;
+    if(state.remain>0){
+      state.remain = Math.max(0, state.remain - delta);
+      updateUI();
+    } else {
+      // phase done
+      if(state.isDate){
+        state.doneCount += 1;
+        doneCountEl.textContent = state.doneCount;
+        store.save();
+      }
+      setMode(!state.isDate);
+      // auto start next
+      start();
+    }
+  }
+
+  let timerId = setInterval(tick, 1000);
+
+  function start(){
+    state.running = !state.running;
+    state.lastTick = nowSec();
+    startBtn.textContent = state.running ? '暫停' : '開始';
+  }
+
+  function reset(){
+    state.running = false;
+    startBtn.textContent = '開始';
+    setMode(true);
+  }
+
+  // ===== Events (Timer)
+  startBtn.onclick = start;
+  resetBtn.onclick = reset;
+  toggleBtn.onclick = ()=> setMode(!state.isDate);
+
+  // keyboard (optional)
+  document.addEventListener('keydown',e=>{
+    if(e.key===' '){ e.preventDefault(); start(); }
+    if(e.key.toLowerCase()==='r'){ reset(); }
+    if(e.key.toLowerCase()==='s'){ setMode(!state.isDate); }
+  });
+
+  // ===== Settings
+  openSettings.onclick = ()=> dlg.showModal();
+  saveBtn.onclick = (e)=>{
+    e.preventDefault();
+    state.dateMin = clampInt(dateMinInput.value,5,300,state.dateMin);
+    state.breakMin = clampInt(breakMinInput.value,1,60,state.breakMin);
+    state.goal = goalInput.value.trim();
+    store.save();
+    dlg.close('ok');
+    // apply to current phase baseline
+    state.total = (state.isDate?state.dateMin:state.breakMin)*60;
+    state.remain = Math.min(state.remain, state.total);
+    updateUI();
+  };
+
+  // ===== Activity & Decisions
+  addActivityBtn.onclick = ()=>{
+    const v = activityInput.value.trim();
+    if(!v) return;
+    state.activities.push(v);
+    activityInput.value='';
+    store.save(); renderActivities();
+  };
+
+  spinBtn.onclick = ()=>{
+    if(state.activities.length===0){ roulettePick.textContent = '先新增幾個活動吧！'; return; }
+    const pick = state.activities[Math.floor(Math.random()*state.activities.length)];
+    roulettePick.textContent = `今晚來：${pick} 🎯`;
+  };
+
+  decideBtn.onclick = ()=>{
+    const A = optA.value.trim(), B = optB.value.trim();
+    if(!A && !B){ decisionResult.textContent='請輸入兩個選項～'; return; }
+    if(A && !B){ decisionResult.textContent=`就 ${A} 吧！`; return; }
+    if(B && !A){ decisionResult.textContent=`就 ${B} 吧！`; return; }
+    decisionResult.textContent = Math.random()<0.5 ? `選：${A}` : `選：${B}`;
+  };
+
+  coinBtn.onclick = ()=>{
+    decisionResult.textContent = Math.random()<0.5 ? '正面！' : '反面！';
+  };
+
+  // ===== Budget & Notes
+  addCostBtn.onclick = ()=>{
+    const name = itemName.value.trim();
+    const cost = parseFloat(itemCost.value);
+    if(!name || isNaN(cost)) return;
+    state.costs.push({name, cost});
+    itemName.value=''; itemCost.value='';
+    store.save(); renderCosts();
+  };
+
+  notes.addEventListener('input', ()=>{
+    state.notes = notes.value;
+    store.save();
+  });
+
+  // ===== Init
+  setMode(true); // start in "約會" mode
+
+  // ===== Utils
+  function clampInt(v,min,max,fallback){
+    v = parseInt(v,10);
+    return Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback;
+  }
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+})();
+</script>
+</body>
+</html>
