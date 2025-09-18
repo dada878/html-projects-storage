@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>近期CPV計算器</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 30px auto;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; }
+    label { display: block; margin-top: 15px; font-weight: bold; }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    .video-inputs {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:hover { background: #45a049; }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #fff;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 18px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>近期 CPV 計算器</h1>
+
+  <label for="name">名稱</label>
+  <input type="text" id="name" placeholder="輸入名稱">
+
+  <label for="price">報價（元）</label>
+  <input type="number" id="price" placeholder="輸入報價">
+
+  <label>近十隻影片觀看數</label>
+  <div class="video-inputs" id="videoInputs">
+    <!-- JS 生成10個欄位 -->
+  </div>
+
+  <button onclick="calculateCPV()">計算 CPV</button>
+
+  <div class="result" id="result">請輸入資料後按下「計算 CPV」</div>
+
+  <script>
+    // 生成10個輸入框
+    const container = document.getElementById('videoInputs');
+    for (let i = 1; i <= 10; i++) {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.placeholder = `第${i}隻觀看數`;
+      input.id = `video${i}`;
+      container.appendChild(input);
+    }
+
+    function calculateCPV() {
+      const name = document.getElementById('name').value.trim();
+      const price = parseFloat(document.getElementById('price').value);
+      let totalViews = 0;
+
+      for (let i = 1; i <= 10; i++) {
+        const v = parseInt(document.getElementById(`video${i}`).value) || 0;
+        totalViews += v;
+      }
+
+      const resultBox = document.getElementById('result');
+
+      if (!name || isNaN(price) || totalViews === 0) {
+        resultBox.innerHTML = "⚠️ 請確認已輸入名稱、報價及所有觀看數！";
+        return;
+      }
+
+      const cpv = price / totalViews;
+      resultBox.innerHTML = `
+        名稱：<b>${name}</b><br>
+        總觀看數：<b>${totalViews.toLocaleString()}</b><br>
+        報價：<b>${price.toLocaleString()}</b> 元<br>
+        近期 CPV：<b>${cpv.toFixed(4)}</b> 元/觀看
+      `;
+    }
+  </script>
+
+</body>
+</html>
