@@ -1,0 +1,66 @@
+import { Theme, Card, Box } from '@radix-ui/themes';
+import '@radix-ui/themes/styles.css';
+
+function App() {
+  const [data, setData] = useState([]);
+  const [form, setForm] = useState({
+    name: "",
+    price: "",
+    link: "",
+    views: ""
+  });
+
+  const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
+  const handleSubmit = e => {
+    e.preventDefault();
+    const cpv = Number(form.price) / Number(form.views) || 0;
+    setData([...data, { ...form, cpv }]);
+    setForm({ name: "", price: "", link: "", views: "" });
+  };
+
+  return (
+    <Theme appearance="dark" accentColor="indigo" radius="large">
+      <Box style={{
+        background: "linear-gradient(135deg, #373f51 0%, #232946 100%)",
+        minHeight: "100vh",
+        padding: "32px"
+      }}>
+        <Card>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input name="name" value={form.name} onChange={handleChange} placeholder="名稱" required />
+            <input name="price" value={form.price} onChange={handleChange} placeholder="報價" type="number" required />
+            <input name="link" value={form.link} onChange={handleChange} placeholder="社群連結" />
+            <input name="views" value={form.views} onChange={handleChange} placeholder="近期觀看數" type="number" required />
+            <div>近期ＣＰＶ：{form.price && form.views ? (Number(form.price)/Number(form.views)).toFixed(2) : '—'}</div>
+            <button type="submit">送出</button>
+          </form>
+        </Card>
+
+        <Card style={{ marginTop: "32px" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>名稱</th>
+                <th>報價</th>
+                <th>社群連結</th>
+                <th>近期觀看數</th>
+                <th>近期ＣＰＶ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((row, idx) => (
+                <tr key={idx}>
+                  <td>{row.name}</td>
+                  <td>{row.price}</td>
+                  <td>{row.link}</td>
+                  <td>{row.views}</td>
+                  <td>{row.cpv.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </Box>
+    </Theme>
+  );
+}
