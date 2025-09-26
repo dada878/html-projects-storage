@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>25:00 • 番茄鐘</title>
+  <style>
+    :root{
+      --bg-start:#0b0f17;
+      --bg-end:#141b2a;
+      --surface:#0f1522;
+      --text:#e8eefc;
+      --muted:#9aa6bd;
+      --ring:#3b82f6;
+      --work-grad-start:#ff7a59; /* 暖色 */
+      --work-grad-end:#ffb86b;
+      --break-grad-start:#41b3ff; /* 冷色 */
+      --break-grad-end:#7cf3ff;
+      --btn-surface:#151c2b;
+      --btn-hover:#1b2437;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:14px;
+    }
+
+    /* 背景漸層（深色） */
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Noto Sans TC", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color:var(--text);
+      background: radial-gradient(1200px 800px at 20% -10%, #1c2540 0%, transparent 60%),
+                  radial-gradient(1000px 700px at 120% 0%, #2b1f4a 0%, transparent 55%),
+                  linear-gradient(160deg,var(--bg-start),var(--bg-end));
+      min-height:100svh;
+      display:grid;
+      place-items:center;
+    }
+
+    .app{
+      width:min(640px, 94vw);
+      padding:18px;
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:20px;
+    }
+
+    .header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:16px;
+    }
+    .title{
+      font-weight:700;
+      letter-spacing:.02em;
+      font-size:20px;
+    }
+    .mode-pill{
+      font-size:13px;
+      padding:6px 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.1);
+      color:var(--text);
+    }
+
+    /* 圓形進度容器 */
+    .timer{
+      display:grid;
+      place-items:center;
+      padding:18px;
+    }
+    .ring-wrap{
+      position:relative;
+      width:min(78vw, 360px);
+      aspect-ratio:1/1;
+    }
+    .ring{
+      position:absolute;
+      inset:0;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,.3));
+    }
+    .ring .core{
+      position:absolute;
+      inset:10%;
+      border-radius:50%;
+      background:linear-gradient(180deg, rgba(0,0,0,.2), rgba(255,255,255,.02));
+      border:1px solid rgba(255,255,255,.06);
+      display:grid;
+      place-items:center;
+      text-align:center;
+      padding:12px;
+    }
+    .time{
+      font-size: clamp(36px, 12vw, 56px);
+      font-weight:800;
+      letter-spacing:.03em;
+      line-height:1;
+    }
+    .sub-info{
+      margin-top:6px;
+      font-size:14px;
+      color:var(--muted);
+    }
+
+    /* 控制列 */
+    .controls{
+      display:grid;
+      grid-template-columns:1fr 1fr 1fr 1fr;
+      gap:10px;
+      margin-top:18px;
+    }
+    @media (min-width:560px){
+      .controls{ gap:12px; }
+    }
+    button{
+      -webkit-tap-highlight-color:transparent;
+      appearance:none;
+      border:none;
+      background:var(--btn-surface);
+      color:var(--text);
+      padding:12px 14px;
+      border-radius:12px;
+      font-size:15px;
+      font-weight:650;
+      line-height:1;
+      border:1px solid rgba(255,255,255,.06);
+      transition: transform .12s ease, background .12s ease, border-color .12s ease, box-shadow .12s ease;
+      cursor:pointer;
+    }
+    button:hover{ background:var(--btn-hover); transform: translateY(-1px); }
+    button:active{ transform: translateY(0); }
+    button:focus-visible{ outline:2px solid var(--ring); outline-offset:2px; }
+
+    .btn-primary{
+      background:linear-gradient(135deg, var(--work-grad-start), var(--work-grad-end));
+      color:#1b0f06;
+      border-color:rgba(255,255,255,.0);
+    }
+    .app.break .btn-primary{
+      background:linear-gradient(135deg, var(--break-grad-start), var(--break-grad-end));
+      color:#001a22;
+    }
+    .btn-ghost{ background:transparent; }
+    .footer{
+      margin-top:14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      color:var(--muted);
+      font-size:14px;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    /* 對話框 styles */
+    dialog{
+      width:min(520px, 92vw);
+      border:none;
+      padding:0;
+      border-radius:16px;
+      background:linear-gradient(180deg, #0f1522, #0b101b);
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.08);
+      box-shadow:var(--shadow);
+    }
+    dialog::backdrop{ background: rgba(0,0,0,.55); }
+    .dlg-head{
+      padding:16px 18px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    .dlg-title{ font-weight:700; }
+    .dlg-body{ padding:16px 18px; display:grid; gap:12px; }
+    .field{
+      display:grid; gap:6px;
+    }
+    .field label{ font-size:14px; color:var(--muted); }
+    input[type="number"]{
+      width:100%;
+      background:#0c1220;
+      border:1px solid rgba(255,255,255,.08);
+      color:var(--text);
+      padding:12px 12px;
+      border-radius:12px;
+      font-size:15px;
+    }
+    .dlg-actions{
+      display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid rgba(255,255,255,.06);
+    }
+
+    /* 模式驅動的進度環色彩 */
+    .ring .track{ stroke: rgba(255,255,255,.08); }
+    .ring .progress{
+      /* 預設工作模式的漸層 */
+      stroke: url(#grad-work);
+      transition: stroke-dashoffset .5s linear, stroke .2s ease;
+    }
+    .app.break .ring .progress{ stroke: url(#grad-break); }
+
+    /* 小徽章 */
+    .badge{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:6px 10px; border-radius:999px;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.09);
+    }
+  </style>
+</head>
+<body>
+  <main class="app card work" id="app">
+    <header class="header">
+      <div class="title">番茄鐘</div>
+      <div class="mode-pill" id="modePill">模式：工作</div>
+    </header>
+
+    <section class="timer">
+      <div class="ring-wrap">
+        <!-- SVG 進度環 -->
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <!-- 定義兩種漸層：工作(暖)、休息(冷) -->
+          <defs>
+            <linearGradient id="grad-work" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ff7a59"/>
+              <stop offset="100%" stop-color="#ffb86b"/>
+            </linearGradient>
+            <linearGradient id="grad-break" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#41b3ff"/>
+              <stop offset="100%" stop-color="#7cf3ff"/>
+            </linearGradient>
+          </defs>
+          <!-- 底軌 -->
+          <circle class="track" cx="60" cy="60" r="52" fill="none" stroke-width="10" />
+          <!-- 進度 -->
+          <circle class="progress" id="progress" cx="60" cy="60" r="52" fill="none" stroke-width="10"
+                  stroke-linecap="round" transform="rotate(-90 60 60)" />
+        </svg>
+
+        <!-- 中心資訊 -->
+        <div class="core">
+          <div class="time" id="time">25:00</div>
+          <div class="sub-info" id="subInfo">工作中 · 第 <span id="rounds">0</span> 顆</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="startPause" class="btn-primary">開始</button>
+      <button id="reset">重置</button>
+      <button id="toggle">切換模式</button>
+      <button id="settings" class="btn-ghost">設定</button>
+    </section>
+
+    <footer class="footer">
+      <span class="badge" title="完成的工作番茄數">
+        ✅ 已完成：<strong id="doneCount">0</strong> 顆
+      </span>
+      <span style="opacity:.9">提示：完成「工作」回合才會+1</span>
+    </footer>
+  </main>
+
+  <!-- 設定對話框 -->
+  <dialog id="dlg">
+    <form method="dialog">
+      <div class="dlg-head">
+        <div class="dlg-title">計時設定</div>
+        <button value="cancel" aria-label="關閉" class="btn-ghost" style="padding:8px 10px;border-radius:10px">✕</button>
+      </div>
+      <div class="dlg-body">
+        <div class="field">
+          <label for="workInput">工作時間（分鐘）</label>
+          <input id="workInput" type="number" inputmode="numeric" min="1" max="180" step="1" value="25">
+        </div>
+        <div class="field">
+          <label for="breakInput">休息時間（分鐘）</label>
+          <input id="breakInput" type="number" inputmode="numeric" min="1" max="180" step="1" value="5">
+        </div>
+      </div>
+      <div class="dlg-actions">
+        <button value="cancel" class="btn-ghost">取消</button>
+        <button id="saveSettings" class="btn-primary" value="default">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    // —— 狀態 —— //
+    const appEl = document.getElementById('app');
+    const timeEl = document.getElementById('time');
+    const subInfoEl = document.getElementById('subInfo');
+    const roundsEl = document.getElementById('rounds');
+    const doneEl = document.getElementById('doneCount');
+    const modePill = document.getElementById('modePill');
+    const progressEl = document.getElementById('progress');
+
+    const startPauseBtn = document.getElementById('startPause');
+    const resetBtn = document.getElementById('reset');
+    const toggleBtn = document.getElementById('toggle');
+    const settingsBtn = document.getElementById('settings');
+
+    const dlg = document.getElementById('dlg');
+    const workInput = document.getElementById('workInput');
+    const breakInput = document.getElementById('breakInput');
+    const saveSettingsBtn = document.getElementById('saveSettings');
+
+    // 預設（可被設定覆寫）
+    let workMinutes = 25;
+    let breakMinutes = 5;
+
+    let isRunning = false;
+    let isWork = true;         // true: 工作；false: 休息
+    let remaining = workMinutes * 60;
+    let timerId = null;
+    let roundsDone = 0;        // 當前循環中的番茄數（顯示用）
+    let tomatoesDone = 0;      // 完成的工作回合數
+
+    // 進度環長度
+    const R = 52;
+    const CIRC = 2 * Math.PI * R;
+    progressEl.setAttribute('stroke-dasharray', CIRC.toFixed(2));
+    progressEl.setAttribute('stroke-dashoffset', '0');
+
+    function fmt(t){
+      const m = Math.floor(t/60);
+      const s = t % 60;
+      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function updateTitle(){
+      const prefix = isWork ? '工作' : '休息';
+      document.title = `${fmt(remaining)} • ${prefix} • 番茄鐘`;
+    }
+
+    function updateUI(){
+      timeEl.textContent = fmt(remaining);
+      roundsEl.textContent = roundsDone;
+      doneEl.textContent = tomatoesDone;
+      modePill.textContent = `模式：${isWork ? '工作' : '休息'}`;
+      appEl.classList.toggle('break', !isWork);
+
+      // 子資訊
+      subInfoEl.innerHTML = `${isWork ? '工作中' : '休息中'} · 第 <span id="rounds">${roundsDone}</span> 顆`;
+
+      // 進度環（剩餘比例）
+      const total = (isWork ? workMinutes : breakMinutes) * 60;
+      const ratio = total === 0 ? 0 : remaining / total;
+      const offset = CIRC * (1 - ratio);
+      progressEl.setAttribute('stroke-dashoffset', String(offset));
+
+      // 主動更新標籤標題
+      updateTitle();
+
+      // 主按鈕狀態文案
+      startPauseBtn.textContent = isRunning ? '暫停' : '開始';
+    }
+
+    function start(){
+      if(isRunning) return;
+      isRunning = true;
+      tick(); // 立即刷新一次，避免延遲
+      timerId = setInterval(tick, 1000);
+      updateUI();
+    }
+
+    function pause(){
+      if(!isRunning) return;
+      isRunning = false;
+      clearInterval(timerId);
+      updateUI();
+    }
+
+    function reset(){
+      pause();
+      remaining = (isWork ? workMinutes : breakMinutes) * 60;
+      updateUI();
+    }
+
+    function toggleMode(manual=true){
+      // 若按手動切換，保持計時暫停狀態（較直覺）
+      const wasRunning = isRunning;
+      pause();
+      isWork = !isWork;
+      remaining = (isWork ? workMinutes : breakMinutes) * 60;
+      // 手動切換不自動開始；自動切換則沿用原本是否運行
+      if(!manual && wasRunning) start();
+      updateUI();
+    }
+
+    function completeCycle(){
+      if(isWork){
+        tomatoesDone += 1;
+        roundsDone += 1;
+      }
+    }
+
+    function tick(){
+      if(remaining <= 0){
+        completeCycle();
+        // 自動切換模式並重新開始下一段
+        isWork = !isWork;
+        remaining = (isWork ? workMinutes : breakMinutes) * 60;
+        updateUI();
+        return;
+      }
+      remaining -= 1;
+      updateUI();
+    }
+
+    // —— 事件 —— //
+    startPauseBtn.addEventListener('click', ()=>{
+      isRunning ? pause() : start();
+    });
+
+    resetBtn.addEventListener('click', reset);
+
+    toggleBtn.addEventListener('click', ()=>{
+      toggleMode(true);
+    });
+
+    settingsBtn.addEventListener('click', ()=>{
+      // 對話框顯示目前值
+      workInput.value = String(workMinutes);
+      breakInput.value = String(breakMinutes);
+      if(typeof dlg.showModal === 'function'){
+        dlg.showModal();
+      }else{
+        // 極舊瀏覽器 fallback
+        alert('您的瀏覽器不支援對話框。請更新或改用桌面瀏覽器。');
+      }
+    });
+
+    saveSettingsBtn.addEventListener('click', (e)=>{
+      e.preventDefault(); // 使用 form dialog 的 default submit
+      const w = Math.max(1, Math.min(180, parseInt(workInput.value||'25',10)));
+      const b = Math.max(1, Math.min(180, parseInt(breakInput.value||'5',10)));
+      workMinutes = w;
+      breakMinutes = b;
+
+      // 若目前在工作/休息中，重置當前段落時間但不清除完成數
+      remaining = (isWork ? workMinutes : breakMinutes) * 60;
+      dlg.close();
+      updateUI();
+    });
+
+    // 鍵盤捷徑（空白：開始/暫停；R：重置；T：切換模式）
+    window.addEventListener('keydown', (e)=>{
+      if (e.target.tagName === 'INPUT') return;
+      if(e.code === 'Space'){ e.preventDefault(); isRunning ? pause() : start(); }
+      if(e.key.toLowerCase() === 'r'){ reset(); }
+      if(e.key.toLowerCase() === 't'){ toggleMode(true); }
+    });
+
+    // 初始渲染
+    updateUI();
+
+    // 視窗不可見時仍更新標題（iOS 前景/背景切換保險）
+    document.addEventListener('visibilitychange', updateTitle);
+  </script>
+</body>
+</html>
